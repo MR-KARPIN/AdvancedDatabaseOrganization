@@ -7,31 +7,67 @@
 
 /* MANIPULATING PAGE FILES */
 /***************************/
-
+FILE *filePointer;
 // Initialize any necessary variables or data structures
 void initStorageManager(void) {
-    // TODO 
+    filePointer = NULL;
 }
 
 // Create a new page file with one page of PAGE_SIZE bytes
 RC createPageFile(char *fileName) {
-    // TODO 
+
+    filePointer = fopen(fileName, "w+"); // w+ used to open file for read/write
+    if (filePointer == NULL)
+        return RC_FILE_NOT_FOUND; // If unable to open file, filePointer will be NULL and return File not Found
+
+    // But if successful...
+    char *block = malloc(PAGE_SIZE * sizeof(char));         // Block of memory with PAGE_SIZE size
+    memset(block, '\0', PAGE_SIZE);                         // Intialize block with 0 bytes
+    fwrite(block, sizeof(char), PAGE_SIZE, filePointer);    // Write contents of the block to file
+
+    // Clean up
+    free(block);                                            // Free block to avoid memory leaks
+    fclose(filePointer);                                    // Close connection
+    return RC_OK;
 }
 
 // Open an existing page file
 RC openPageFile(char *fileName, SM_FileHandle *fHandle) {
-    // TODO 
+
+    filePointer = fopen(fileName, "r+");    // Opening the file
+    if (filePointer == NULL)                       // :(
+        return RC_FILE_NOT_FOUND;
+    
+    // But if again successful...
+    fseek(filePointer, 0, SEEK_END);    // filePointer will be pointed to the end of file
+
+    // Declaring helpful variables for metadata
+    int finalByte = ftell(filePointer); // Current position of the file pointer
+    int numPages = (finalByte+1) / PAGE_SIZE;  // Number of pages is calculated using PAGE_SIZE
+
+    // Let's set the metadata
+    fHandle->fileName = fileName;
+    fHandle->totalNumPages = numPages;
+    fHandle->curPagePos = 0;
+
+    // Set file pointer to the beginning of file
+    rewind(filePointer);
+    return RC_OK;
 }
 
 // Close the page file
 RC closePageFile(SM_FileHandle *fHandle) {
-    // TODO 
+	int fileClosed = fclose(filePointer);           // Return code to store value of fclose
+	if (fileClosed != 0)                            // If not closed due to fclose failing...
+		return RC_FILE_NOT_FOUND;           
+    return RC_OK;                                   // File successfully closed
 }
 
-// Delete the page file from disk
+//Destroying Page file
 RC destroyPageFile(char *fileName) {
-    // TODO 
-
+	if (remove(fileName) != 0)                      // Same as method above, but testing remove instead
+		return RC_FILE_NOT_FOUND;
+	return RC_OK;
 }
 
 /* READING BLOCKS FROM DISC */
