@@ -7,7 +7,9 @@
 
 /* MANIPULATING PAGE FILES */
 /***************************/
+
 FILE *filePointer;
+
 // Initialize any necessary variables or data structures
 void initStorageManager(void) {
     filePointer = NULL;
@@ -75,36 +77,56 @@ RC destroyPageFile(char *fileName) {
 
 // Read a specific block from the file
 RC readBlock(int pageNum, SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    if (openPageFile(fHandle->fileName,fHandle) == RC_FILE_NOT_FOUND){
+        return RC_FILE_NOT_FOUND
+    } else if (pageNum > fHandle->totalNumPages){
+        return RC_READ_NON_EXISTING_PAGE
+    } else {
+        
+        filePointer = fopen(fHandle->fileName, "w+"); // Open the file and get a file pointer
+        fseek(filePointer, pageNum * PAGE_SIZE, SEEK_SET); // Move the pointer to the pageNum location
+
+        fread(memPage, sizeof(char), PAGE_SIZE, filePointer); // We read the page into the memory
+        
+        fclose(filePointer); // Close connection
+        return RC_OK;
+    }
+
 }
 
 // Get the current block position in the file
 int getBlockPos(SM_FileHandle *fHandle) {
-    // TODO 
+    return fHandle->curPagePos; 
 }
 
 // Read the first block from the file
 RC readFirstBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    return readBlock(0, fHandle, memPage);
 }
 
 // Read the previous block relative to the current page position
 RC readPreviousBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    if ((fHandle->curPagePos - 1) < 0)
+        return RC_READ_NON_EXISTING_PAGE
+    else 
+        return readBlock(fHandle->curPagePos - 1, fHandle, memPage);
 }
 
 RC readCurrentBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    return readBlock(fHandle->curPagePos, fHandle, memPage);
 }
 
 // Read the next block relative to the current page position
 RC readNextBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    if ((fHandle->curPagePos + 1) > fHandle->totalNumPages)
+        return RC_READ_NON_EXISTING_PAGE
+    else
+        return readBlock(fHandle->curPagePos - 1, fHandle, memPage); 
 }
 
 // Read the last block in the file
 RC readLastBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    return readBlock(fHandle->totalNumPages - 1, fHandle, memPage);
 }
 
 /* WRITING BLOCKS TO A PAGE FILE */
@@ -112,20 +134,48 @@ RC readLastBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
 
 // Write a block at a specific position
 RC writeBlock(int pageNum, SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    if (openPageFile(fHandle->fileName,fHandle) == RC_FILE_NOT_FOUND){
+        return RC_FILE_NOT_FOUND
+    } else if (pageNum > fHandle->totalNumPages){
+        return RC_WRITE_FAILED
+    } else {
+        
+        filePointer = fopen(fHandle->fileName, "w+"); // Open the file and get a file pointer
+        fseek(filePointer, pageNum * PAGE_SIZE, SEEK_SET); // Move the pointer to the pageNum location
+
+        fwrite(memPage, sizeof(char), PAGE_SIZE, filePointer); // We write the page from the memory
+        fHandle->curPagePos = pageNum;
+
+        if(pageNum == fHandle->totalNumPages)
+            fHandle->totalNumPages++ // If the page written is the last one we update the total num of pages
+
+        fclose(filePointer); // Close connection
+        return RC_OK;
+    }
 }
 
 // Write the current block
 RC writeCurrentBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    // TODO 
+    return writeBlock(fHandle->curPagePos, fHandle, block);
 }
 
 // Append an empty block at the end of the file
 RC appendEmptyBlock(SM_FileHandle *fHandle) {
-    // TODO 
+    char* block = malloc(PAGE_SIZE * sizeof(char));         // Block of memory with PAGE_SIZE size
+    memset(block, '\0', PAGE_SIZE);                         // Intialize block with 0 bytes
+    
+    RC response = writeBlock(fHandle->totalNumPages, fHandle, block);
+    
+    free(block); // Free block to avoid memory leaks
+    return response;
 }
 
 // Ensure that the file has a certain number of pages
 RC ensureCapacity(int numberOfPages, SM_FileHandle *fHandle) {
-    // TODO 
+    for (i = numberOfPages-fHandle->totalNumPages; i>0; i--){
+        RC response = appendEmptyBlock(fHandle);
+        if (response != RC_OK)
+            return response;
+    }
+    return RC_OK;
 }
