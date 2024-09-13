@@ -101,7 +101,18 @@ int getBlockPos(SM_FileHandle *fHandle) {
 
 // Read the first block from the file
 RC readFirstBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
-    return readBlock(0, fHandle, memPage);
+    if (fHandle == NULL)                    // Ensure fHandle isn't NULL...
+        return RC_FILE_NOT_FOUND;
+    else if (fHandle->totalNumPages <= 0)   // Or empty
+        return RC_READ_NON_EXISTING_PAGE;
+    else {
+        fseek(filePointer, 0, SEEK_SET);    // filePointer will point to first position on file
+        RC firstBlock = fread(memPage, sizeof(char), PAGE_SIZE, filePointer);   // Getting first block
+        fHandle->curPagePos = 0;        // Update the current position to the first
+        if (firstBlock < 0 || firstBlock > PAGE_SIZE)   // Ensure right size, too
+            return RC_READ_NON_EXISTING_PAGE;
+        return RC_OK;       // :)
+    }
 }
 
 // Read the previous block relative to the current page position
