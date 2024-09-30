@@ -31,6 +31,8 @@ typedef struct BM_BufferPool {
 typedef struct BM_PageHandle {
 	PageNumber pageNum;
 	char *data;
+	bool dirtyFlag;
+	int fixCount;
 } BM_PageHandle;
 
 // convenience macros
