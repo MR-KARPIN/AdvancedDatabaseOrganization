@@ -16,6 +16,7 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
    
     // Allocate memory for the page file name and copy it
     bm->pageFile = (char *) malloc(strlen(pageFileName) + 1);
+    
     strcpy(bm->pageFile, pageFileName);
     
     // Initialize the number of pages and the replacement strategy
@@ -32,6 +33,7 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
         mgmtData->pageFrames[i].pageNum = NO_PAGE; // Initialize all frames as empty
         mgmtData->pageFrames[i].dirtyFlag = false; // Pages are clean initially
         mgmtData->pageFrames[i].fixCount = 0; // No pages are pinned initially
+        mgmtData->pageFrames[i].data = malloc(PAGE_SIZE); // No pages are pinned initially
     }
 
     // Initialize statistics for read/write IO
@@ -48,8 +50,13 @@ RC shutdownBufferPool(BM_BufferPool *const bm) {
     //Flush all the pages before deleting the BufferPool
     forceFlushPool(bm);
 
+     for (int i = 0; i < bm->numPages; i++)
+        free(mgmtData->pageFrames[i].data);
+
+
     // Free up memory for page frames and other management data
     free(mgmtData->pageFrames);
+    
     free(bm->mgmtData);
     free(bm->pageFile);
 
@@ -88,7 +95,8 @@ RC markDirty(BM_BufferPool *const bm, BM_PageHandle *const page) {
 // Unpin a page from the buffer pool
 RC unpinPage(BM_BufferPool *const bm, BM_PageHandle *const page) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
-
+    fprintf(stderr, "Error message: %s\n", "a pinear!");
+    
     // Loop for the page we want to unpin
     for (int i = 0; i < bm->numPages; i++) {
         if (mgmtData->pageFrames[i].pageNum == page->pageNum) {
@@ -96,11 +104,12 @@ RC unpinPage(BM_BufferPool *const bm, BM_PageHandle *const page) {
             if (mgmtData->pageFrames[i].fixCount > 0) {
                 // Decrease fixCount
                 mgmtData->pageFrames[i].fixCount--;
+                fprintf(stderr, "Error message: %s\n", "soy pin!");
                 return RC_OK;
             }
         }
     }
-
+    fprintf(stderr, "Error message: %s\n", "womp womp pin");
     // Error if page not found / already unpinned
     return RC_READ_NON_EXISTING_PAGE;
 }
@@ -168,8 +177,10 @@ RC pinPage(BM_BufferPool *const bm, BM_PageHandle *const page,
 // Get the frame contents of the buffer pool
 PageNumber *getFrameContents(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    fprintf(stderr, "Error message: %s\n", "malloc getframecontents - start");
     PageNumber *frameContents = (PageNumber *) malloc(bm->numPages * sizeof(PageNumber));
-
+    fprintf(stderr, "Error message: %s\n", "malloc getframecontents - end");
+    
     for (int i = 0; i < bm->numPages; i++) {
         frameContents[i] = mgmtData->pageFrames[i].pageNum;
     }
@@ -181,8 +192,10 @@ PageNumber *getFrameContents(BM_BufferPool *const bm) {
 // Get dirty flags for the buffer pool
 bool *getDirtyFlags(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    fprintf(stderr, "Error message: %s\n", "malloc getdirtyflags - start");
     bool *dirtyFlags = (bool *) malloc(bm->numPages * sizeof(bool));
-
+    fprintf(stderr, "Error message: %s\n", "malloc getdirtyflags - end");
+    
     for (int i = 0; i < bm->numPages; i++){
         if (mgmtData->pageFrames[i].dirtyFlag){
             dirtyFlags[i] = true; // Write true if the frame is dirty
@@ -197,8 +210,10 @@ bool *getDirtyFlags(BM_BufferPool *const bm) {
 // Get fix counts for the buffer pool
 int *getFixCounts(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    fprintf(stderr, "Error message: %s\n", "malloc getfixcounts - end");
     int *fixCounts = (int *) malloc(bm->numPages * sizeof(int));
-
+    fprintf(stderr, "Error message: %s\n", "malloc getfixcounts - end");
+    
     for (int i = 0; i < bm->numPages; i++)
         fixCounts[i] = mgmtData->pageFrames[i].fixCount;
 
