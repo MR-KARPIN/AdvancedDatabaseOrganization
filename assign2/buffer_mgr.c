@@ -71,27 +71,99 @@ RC forceFlushPool(BM_BufferPool *const bm) {
 
 // Mark a page as dirty
 RC markDirty(BM_BufferPool *const bm, BM_PageHandle *const page) {
-    return RC_OK;
+    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    // First, let's loop through the buffer...
+    for (int i = 0; i < bm->numPages; i++) {
+        // and if we found the desired page
+        if (mgmtData->pageFrames[i].pageNum == page->pageNum) {
+            // Mark it as DIRTY
+            mgmtData->pageFrames[i].dirtyFlag = true;
+            return RC_OK;
+        }
+    }
+    // Error if page isn't found
+    return RC_READ_NON_EXISTING_PAGE;
 }
 
 // Unpin a page from the buffer pool
 RC unpinPage(BM_BufferPool *const bm, BM_PageHandle *const page) {
-    return RC_OK;
+    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+
+    // Loop for the page we want to unpin
+    for (int i = 0; i < bm->numPages; i++) {
+        if (mgmtData->pageFrames[i].pageNum == page->pageNum) {
+            // If pinned...
+            if (mgmtData->pageFrames[i].fixCount > 0) {
+                // Decrease fixCount
+                mgmtData->pageFrames[i].fixCount--;
+                return RC_OK;
+            }
+        }
+    }
+
+    // Error if page not found / already unpinned
+    return RC_READ_NON_EXISTING_PAGE;
 }
 
 
 // Force a specific page to be written to disk
 RC forcePage(BM_BufferPool *const bm, BM_PageHandle *const page) {
-    return RC_OK;
+    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+
+    // Loop again for the page we are looking for...
+    for (int i = 0; i < bm->numPages; i++) {
+        if (mgmtData->pageFrames[i].pageNum == page->pageNum) {
+            // If dirty flag is true...
+            if (mgmtData->pageFrames[i].dirtyFlag) {
+                // Writing the page back to disk
+                mgmtData->numWriteIO++; // Incrementing write IO count...
+                mgmtData->pageFrames[i].dirtyFlag = false; // and setting dirty flag to false
+                return RC_OK;
+            }
+        }
+    }
+    // Error in case page not found
+    return RC_READ_NON_EXISTING_PAGE; // If page is not found
 }
 
 
 // Pin a page into the buffer pool
 RC pinPage(BM_BufferPool *const bm, BM_PageHandle *const page, 
            const PageNumber pageNum) {
-    return RC_OK;
-}
+    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
 
+    // First things first... check if page is in the buffer...
+    for (int i = 0; i < bm->numPages; i++) {
+        if (mgmtData->pageFrames[i].pageNum == pageNum) {
+            // If it's in the buffer then we increase fix count
+            mgmtData->pageFrames[i].fixCount++;
+            page->pageNum = pageNum; // Update page handle
+            page->data = mgmtData->pageFrames[i].data; // Point to data
+            return RC_OK;
+        }
+    }
+
+    // If page is not in buffer... then we find a empty frame to load it
+    for (int i = 0; i < bm->numPages; i++) {
+        if (mgmtData->pageFrames[i].pageNum == NO_PAGE) {
+            // Loading page from disk
+            // Load the page into the empty frame
+            mgmtData->pageFrames[i].pageNum = pageNum;
+            // Fix count becomes 1
+            mgmtData->pageFrames[i].fixCount = 1;
+            // Now... setting the page
+            page->pageNum = pageNum;
+            // As well as data pointer
+            page->data = mgmtData->pageFrames[i].data;
+
+            mgmtData->numReadIO++; // Increment read IO count
+            return RC_OK;
+        }
+    }
+
+    // If no empty frame is found... :(
+    return RC_READ_NON_EXISTING_PAGE; 
+}
 
 // Get the frame contents of the buffer pool
 PageNumber *getFrameContents(BM_BufferPool *const bm) {
