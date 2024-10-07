@@ -33,6 +33,7 @@ typedef struct BM_PageHandle {
 	char *data;
 	bool dirtyFlag;
 	int fixCount;
+	int lastUsed;
 } BM_PageHandle;
 
 // convenience macros
