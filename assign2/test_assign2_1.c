@@ -137,7 +137,6 @@ checkDummyPages(BM_BufferPool *bm, int num)
       sprintf(expected, "%s-%i", "Page", h->pageNum);
       printf("\nAfter sprintf\n");
       printPoolContent(bm);
-      printf(h->data);
       ASSERT_EQUALS_STRING(expected, h->data, "reading back dummy page content");
 
       CHECK(unpinPage(bm,h));

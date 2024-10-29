@@ -10,7 +10,6 @@ typedef struct BufferPoolMgmtData {
     int numReadIO;   // Number of Reads fow the statistics
 	int numWriteIO;   // Number of Writes fow the statistics
     int next;   // FIFO utilization
-    long counter;
     int LRU[];
 } BufferPoolMgmtData;
 
@@ -31,7 +30,6 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
 
     // Allocate memory for page frames in the buffer pool
     mgmtData->pageFrames = malloc(numPages * sizeof(BM_PageHandle)); 
-    mgmtData->counter = 0;
     for (int i = 0; i < numPages; i++) {
         mgmtData->pageFrames[i].pageNum = NO_PAGE; // Initialize all frames as empty
         mgmtData->pageFrames[i].dirtyFlag = false; // Pages are clean initially
@@ -61,10 +59,8 @@ RC shutdownBufferPool(BM_BufferPool *const bm) {
     printPoolContent(bm);
 
     // Free memory for page frames
-    for (int i = 0; i < bm->numPages; i++) {
+    for (int i = 0; i < bm->numPages; i++)
         free(mgmtData->pageFrames[i].data); // Free individual page data
-        mgmtData->pageFrames[i].data = NULL; // Set to NULL to avoid dangling pointer
-    }
 
     printf("Freeing page frames\n");
     free(mgmtData->pageFrames); // Free page frames
@@ -73,12 +69,10 @@ RC shutdownBufferPool(BM_BufferPool *const bm) {
 
     printf("Freeing page file\n");
     free(bm->pageFile); // Free the page file string
-    bm->pageFile = NULL; // Set to NULL to avoid dangling pointer
 
     printPoolContent(bm);
 
     free(bm->mgmtData); // Free management data
-    bm->mgmtData = NULL; // Set to NULL to avoid dangling pointer
     printf("Buffer pool shutdown completed\n");
     
     return RC_OK;
@@ -158,7 +152,6 @@ RC forcePage(BM_BufferPool *const bm, BM_PageHandle *const page) {
 // Pin a page into the buffer pool
 RC pinPage(BM_BufferPool *const bm, BM_PageHandle *const page, 
            const PageNumber pageNum) {
-    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
     switch(bm->strategy)
 	{
 	case RS_FIFO:
