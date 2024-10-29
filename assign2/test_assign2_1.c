@@ -62,11 +62,10 @@ testCreatingAndReadingDummyPages (void)
 
   CHECK(createPageFile("testbuffer.bin"));
 
-  printf("Before create page dummies");
+  printf("Before create page dummies\n");
   printPoolContent(bm);
   createDummyPages(bm, 22);
   printf("After create page dummies");
-  printPoolContent(bm);
   checkDummyPages(bm, 20);
 
   createDummyPages(bm, 10000);
@@ -87,16 +86,17 @@ createDummyPages(BM_BufferPool *bm, int num)
 
   CHECK(initBufferPool(bm, "testbuffer.bin", 3, RS_FIFO, NULL));
   
-  printf("Before Loop");
+  printf("Before Loop\n");
   printPoolContent(bm);
 
   for (i = 0; i < num; i++)
     {
-      printf("Iteration %i", i);
+      printf(h->data);
+      printf("\nIteration %i\n", i);
       CHECK(pinPage(bm, h, i));
       printf("After pinPage");
       printPoolContent(bm);
-      //sprintf(h->data, "%s-%i", "Page", h->pageNum);
+      sprintf(h->data, "%s-%i", "Page", h->pageNum);
       printf("After sprintf");
       printPoolContent(bm);
       CHECK(markDirty(bm, h));
@@ -122,13 +122,22 @@ checkDummyPages(BM_BufferPool *bm, int num)
   BM_PageHandle *h = MAKE_PAGE_HANDLE();
   char *expected = malloc(sizeof(char) * 512);
 
+  printf("\nBefore init\n");
   CHECK(initBufferPool(bm, "testbuffer.bin", 3, RS_FIFO, NULL));
+  printf("\nAfter init\n");
 
   for (i = 0; i < num; i++)
     {
+      printf(h->data);
+      printf("\nBefore pinPage\n");
       CHECK(pinPage(bm, h, i));
+      printPoolContent(bm);
+      printf("\nAfter pinPage\n");
 
       sprintf(expected, "%s-%i", "Page", h->pageNum);
+      printf("\nAfter sprintf\n");
+      printPoolContent(bm);
+      printf(h->data);
       ASSERT_EQUALS_STRING(expected, h->data, "reading back dummy page content");
 
       CHECK(unpinPage(bm,h));
@@ -306,7 +315,7 @@ testLRU (void)
   {
       pinPage(bm, h, 5 + i);
       unpinPage(bm, h);
-      ASSERT_EQUALS_POOL(poolContents[snapshot], bm, "check pool content using pages");
+      ASSERT_EQUALS_POOL(poolContents[snapshot], bm, "check pool content using pages 2");
       snapshot++;
   }
 

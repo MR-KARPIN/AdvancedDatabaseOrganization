@@ -10,6 +10,8 @@ typedef struct BufferPoolMgmtData {
     int numReadIO;   // Number of Reads fow the statistics
 	int numWriteIO;   // Number of Writes fow the statistics
     int next;   // FIFO utilization
+    long counter;
+    int LRU[];
 } BufferPoolMgmtData;
 
 // Initialize the buffer pool
@@ -29,16 +31,19 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
 
     // Allocate memory for page frames in the buffer pool
     mgmtData->pageFrames = malloc(numPages * sizeof(BM_PageHandle)); 
+    mgmtData->counter = 0;
     for (int i = 0; i < numPages; i++) {
         mgmtData->pageFrames[i].pageNum = NO_PAGE; // Initialize all frames as empty
         mgmtData->pageFrames[i].dirtyFlag = false; // Pages are clean initially
         mgmtData->pageFrames[i].fixCount = 0; // No pages are pinned initially
+        mgmtData->pageFrames[i].data = malloc(PAGE_SIZE);
     }
 
     // Initialize statistics for read/write IO
     mgmtData->numReadIO = 0;
     mgmtData->numWriteIO = 0;
     mgmtData->next = 0;
+    mgmtData->LRU[numPages];
 
     return RC_OK;
 }
@@ -47,25 +52,35 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
 RC shutdownBufferPool(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
 
-    printf("Before forceFlushPool");
+    printf("Before forceFlushPool\n");
     printPoolContent(bm);
-    //Flush all the pages before deleting the BufferPool
+    
+    // Flush all the pages before deleting the BufferPool
     forceFlushPool(bm);
     printf("After forceFlushPool\n");
     printPoolContent(bm);
 
-    // Free page frames and management data in the correct order
+    // Free memory for page frames
+    for (int i = 0; i < bm->numPages; i++) {
+        free(mgmtData->pageFrames[i].data); // Free individual page data
+        mgmtData->pageFrames[i].data = NULL; // Set to NULL to avoid dangling pointer
+    }
+
     printf("Freeing page frames\n");
-    free(mgmtData->pageFrames);    // Free page frames first
+    free(mgmtData->pageFrames); // Free page frames
 
     printf("Freeing management data\n");
-    free(bm->mgmtData);            // Free management data
 
     printf("Freeing page file\n");
-    free(bm->pageFile);            // Free the page file string
+    free(bm->pageFile); // Free the page file string
+    bm->pageFile = NULL; // Set to NULL to avoid dangling pointer
 
+    printPoolContent(bm);
+
+    free(bm->mgmtData); // Free management data
+    bm->mgmtData = NULL; // Set to NULL to avoid dangling pointer
     printf("Buffer pool shutdown completed\n");
-
+    
     return RC_OK;
 }
 
@@ -144,6 +159,21 @@ RC forcePage(BM_BufferPool *const bm, BM_PageHandle *const page) {
 RC pinPage(BM_BufferPool *const bm, BM_PageHandle *const page, 
            const PageNumber pageNum) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    switch(bm->strategy)
+	{
+	case RS_FIFO:
+		pinPageFIFO(bm, page, pageNum);
+		break;
+
+	case RS_LRU:
+		pinPageLRU(bm, page, pageNum);
+	}
+	return RC_OK;
+}
+
+RC pinPageFIFO(BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum)
+{
+	BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
 
     // First things first... check if page is in the buffer...
     for (int i = 0; i < bm->numPages; i++) {
@@ -174,32 +204,14 @@ RC pinPage(BM_BufferPool *const bm, BM_PageHandle *const page,
         }
     }
 
-    // If no empty frame is found... :(
-    switch(bm->strategy)
-	{
-	case RS_FIFO:
-		pinPageFIFO(bm, page, pageNum);
-		break;
-
-	case RS_LRU:
-		printf("Not yet");
-	}
-	return RC_OK;
-}
-
-RC pinPageFIFO(BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum)
-{
-	BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
-
     while (true) {
-        printf("\nIndex %i", mgmtData->next);
+        printf("\nIndex %i\n", mgmtData->next);
         
         // Check if the page at `next` is pinned
         if (mgmtData->pageFrames[mgmtData->next].fixCount == 0) {
             // If the page is dirty, write it to disk
             if (mgmtData->pageFrames[mgmtData->next].dirtyFlag) {
                 forcePage(bm, &mgmtData->pageFrames[mgmtData->next]);
-                mgmtData->numWriteIO++;
             }
 
             // Pin the new page in this frame (set fixCount, update page number, etc.)
@@ -220,6 +232,71 @@ RC pinPageFIFO(BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumb
         }
     }
 
+    mgmtData->numReadIO++;
+    return RC_OK;
+}
+
+RC pinPageLRU(BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum) {
+    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+
+    // First things first... check if page is in the buffer...
+    for (int i = 0; i < bm->numPages; i++) {
+        if (mgmtData->pageFrames[i].pageNum == pageNum) {
+            // If it's in the buffer then we increase fix count
+            mgmtData->pageFrames[i].fixCount++;
+            printf("\nPage read index %i \n", i);
+            mgmtData->LRU[mgmtData->next] = i;
+            mgmtData->next++;
+            page->pageNum = pageNum; // Update page handle
+            page->data = mgmtData->pageFrames[i].data; // Point to data
+            return RC_OK;
+        }
+    }
+
+    // If page is not in buffer... then we find a empty frame to load it
+    for (int i = 0; i < bm->numPages; i++) {
+        if (mgmtData->pageFrames[i].pageNum == NO_PAGE) {
+            // Loading page from disk
+            // Load the page into the empty frame
+            mgmtData->pageFrames[i].pageNum = pageNum;
+            // Fix count becomes 1
+            mgmtData->pageFrames[i].fixCount = 1;
+            // Now... setting the page
+            page->pageNum = pageNum;
+            // As well as data pointer
+            page->data = mgmtData->pageFrames[i].data;
+
+            mgmtData->numReadIO++; // Increment read IO count
+            return RC_OK;
+        }
+    }
+
+    while (true) {
+        printf("\nIndex %i\n", mgmtData->LRU[0]);
+        
+        if (mgmtData->pageFrames[mgmtData->LRU[0]].dirtyFlag) {
+            forcePage(bm, &mgmtData->pageFrames[mgmtData->LRU[0]]);
+        }
+
+            // Pin the new page in this frame (set fixCount, update page number, etc.)
+            mgmtData->pageFrames[mgmtData->LRU[0]].pageNum = pageNum;
+            mgmtData->pageFrames[mgmtData->LRU[0]].fixCount = 1;
+            mgmtData->pageFrames[mgmtData->LRU[0]].dirtyFlag = false;
+
+            // Set the `page` handle to this frame
+            page->pageNum = pageNum;
+            page->data = mgmtData->pageFrames[mgmtData->LRU[0]].data;
+
+            int temp = mgmtData->LRU[0];
+            for (int i = 0; i < bm->numPages - 1; i++) {
+                mgmtData->LRU[i] = mgmtData->LRU[i + 1];
+            }
+            mgmtData->LRU[bm->numPages - 1] = temp;
+
+            break;
+        }
+
+    mgmtData->numReadIO++;
     return RC_OK;
 }
 

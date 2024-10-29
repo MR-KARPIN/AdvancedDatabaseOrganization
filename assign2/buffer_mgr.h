@@ -26,6 +26,7 @@ typedef struct BM_BufferPool {
 	ReplacementStrategy strategy;
 	void *mgmtData; // use this one to store the bookkeeping info your buffer
 	// manager needs for a buffer pool
+	long counter;
 } BM_BufferPool;
 
 typedef struct BM_PageHandle {
@@ -33,7 +34,6 @@ typedef struct BM_PageHandle {
 	char *data;
 	bool dirtyFlag;
 	int fixCount;
-	int lastUsed;
 } BM_PageHandle;
 
 // convenience macros
@@ -56,6 +56,8 @@ RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page);
 RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page);
 RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, 
 		const PageNumber pageNum);
+RC pinPageFIFO(BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum);
+RC pinPageLRU(BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum);
 
 // Statistics Interface
 PageNumber *getFrameContents (BM_BufferPool *const bm);
