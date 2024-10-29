@@ -46,7 +46,9 @@ main (void)
   testName = "";
 
   testCreatingAndReadingDummyPages();
+  printf("TestCtreatDummies Passed");
   testReadPage();
+  printf("Test 2 done\n\n");
   testFIFO();
   testLRU();
 }
@@ -60,7 +62,11 @@ testCreatingAndReadingDummyPages (void)
 
   CHECK(createPageFile("testbuffer.bin"));
 
+  printf("Before create page dummies");
+  printPoolContent(bm);
   createDummyPages(bm, 22);
+  printf("After create page dummies");
+  printPoolContent(bm);
   checkDummyPages(bm, 20);
 
   createDummyPages(bm, 10000);
@@ -81,15 +87,30 @@ createDummyPages(BM_BufferPool *bm, int num)
 
   CHECK(initBufferPool(bm, "testbuffer.bin", 3, RS_FIFO, NULL));
   
+  printf("Before Loop");
+  printPoolContent(bm);
+
   for (i = 0; i < num; i++)
     {
+      printf("Iteration %i", i);
       CHECK(pinPage(bm, h, i));
-      sprintf(h->data, "%s-%i", "Page", h->pageNum);
+      printf("After pinPage");
+      printPoolContent(bm);
+      //sprintf(h->data, "%s-%i", "Page", h->pageNum);
+      printf("After sprintf");
+      printPoolContent(bm);
       CHECK(markDirty(bm, h));
+      printf("After makeDirty");
+      printPoolContent(bm);
       CHECK(unpinPage(bm,h));
+      printf("After unpinPage");
+      printPoolContent(bm);
     }
 
+  printf("Before ShutDownBuffer");
+  printPoolContent(bm);
   CHECK(shutdownBufferPool(bm));
+  printf("After ShutDownBuffer");
 
   free(h);
 }
