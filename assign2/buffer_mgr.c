@@ -4,13 +4,15 @@
 #include "buffer_mgr_stat.h"
 #include "buffer_mgr.h"
 
+#define MAX_ALLOWED_PAGES 1000  // or a suitable upper limit
+
 // Structure to hold buffer pool management data
 typedef struct BufferPoolMgmtData {
     BM_PageHandle *pageFrames;   // Array of page frames to store pages in memory
     int numReadIO;   // Number of Reads fow the statistics
 	int numWriteIO;   // Number of Writes fow the statistics
     int next;   // FIFO utilization
-    int LRU[];
+    int* LRU;
 } BufferPoolMgmtData;
 
 // Initialize the buffer pool
@@ -37,11 +39,16 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
         mgmtData->pageFrames[i].data = malloc(PAGE_SIZE);
     }
 
+    mgmtData->LRU = malloc(numPages * sizeof(PageNumber));
+    if (mgmtData->LRU == NULL) fprintf(stderr, "Memory allocation for LRU failed\n");
+    
+    
+
+
     // Initialize statistics for read/write IO
     mgmtData->numReadIO = 0;
     mgmtData->numWriteIO = 0;
     mgmtData->next = 0;
-    mgmtData->LRU[numPages];
 
     return RC_OK;
 }
@@ -296,6 +303,11 @@ RC pinPageLRU(BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumb
 // Get the frame contents of the buffer pool
 PageNumber *getFrameContents(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
+        fprintf(stderr, "Error: Invalid number of pages (%d)\n", bm->numPages);
+        return NULL;
+    }
+
     PageNumber *frameContents = (PageNumber *) malloc(bm->numPages * sizeof(PageNumber));
 
     for (int i = 0; i < bm->numPages; i++) {
@@ -309,6 +321,11 @@ PageNumber *getFrameContents(BM_BufferPool *const bm) {
 // Get dirty flags for the buffer pool
 bool *getDirtyFlags(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    
+    if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
+        fprintf(stderr, "Error: Invalid number of pages (%d)\n", bm->numPages);
+        return NULL;
+    }
     bool *dirtyFlags = (bool *) malloc(bm->numPages * sizeof(bool));
 
     for (int i = 0; i < bm->numPages; i++){
@@ -325,6 +342,10 @@ bool *getDirtyFlags(BM_BufferPool *const bm) {
 // Get fix counts for the buffer pool
 int *getFixCounts(BM_BufferPool *const bm) {
     BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) bm->mgmtData;
+    if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
+        fprintf(stderr, "Error: Invalid number of pages (%d)\n", bm->numPages);
+        return NULL;
+    }
     int *fixCounts = (int *) malloc(bm->numPages * sizeof(int));
 
     for (int i = 0; i < bm->numPages; i++)
