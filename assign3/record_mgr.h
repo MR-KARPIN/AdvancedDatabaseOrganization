@@ -9,8 +9,14 @@
 typedef struct RM_ScanHandle
 {
 	RM_TableData *rel;
-	void *mgmtData;
+	ScanMgmtData *mgmtData;
 } RM_ScanHandle;
+
+typedef struct ScanMgmtData
+{
+	RID currentRecord;        
+    Expr *condition;        
+} ScanMgmtData;
 
 // table and manager
 extern RC initRecordManager (void *mgmtData);

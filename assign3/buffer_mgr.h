@@ -28,9 +28,20 @@ typedef struct BM_BufferPool {
 	// manager needs for a buffer pool
 } BM_BufferPool;
 
+// Structure to hold buffer pool management data
+typedef struct BufferPoolMgmtData {
+    BM_PageHandle *pageFrames;   // Array of page frames to store pages in memory
+    int numReadIO;   // Number of Reads fow the statistics
+	int numWriteIO;   // Number of Writes fow the statistics
+    int next;   // FIFO utilization
+    int* LRU;
+} BufferPoolMgmtData;
+
 typedef struct BM_PageHandle {
 	PageNumber pageNum;
 	char *data;
+	bool dirtyFlag;
+	int fixCount;
 } BM_PageHandle;
 
 // convenience macros
@@ -53,6 +64,8 @@ RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page);
 RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page);
 RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, 
 		const PageNumber pageNum);
+RC pinPageFIFO(BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum);
+RC pinPageLRU(BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum);
 
 // Statistics Interface
 PageNumber *getFrameContents (BM_BufferPool *const bm);

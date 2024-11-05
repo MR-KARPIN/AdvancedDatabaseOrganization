@@ -6,14 +6,7 @@
 
 #define MAX_ALLOWED_PAGES 1000  // or a suitable upper limit
 
-// Structure to hold buffer pool management data
-typedef struct BufferPoolMgmtData {
-    BM_PageHandle *pageFrames;   // Array of page frames to store pages in memory
-    int numReadIO;   // Number of Reads fow the statistics
-	int numWriteIO;   // Number of Writes fow the statistics
-    int next;   // FIFO utilization
-    int* LRU;
-} BufferPoolMgmtData;
+
 
 // Initialize the buffer pool
 RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const int numPages, ReplacementStrategy strategy, void *stratData) {

@@ -86,13 +86,12 @@ extern RC createTable(char *name, Schema *schema) {
     *(int*)page_handle_ptr = schema->keySize; // Setting the key size of the attributes
     page_handle_ptr += sizeof(int);  
 
-    int attr_size = floor(getRecordSize(schema) / schema->numAttr);
     // Write schema information for each attribute
     for (int i = 0; i < schema->numAttr; i++) {
         
-        strncpy(page_handle_ptr, schema->attrNames[i], attr_size - 1); // Setting attribute name
-        page_handle_ptr[attr_size - 1] = '\0';  // Ensure null-termination
-        page_handle_ptr += attr_size;
+        strncpy(page_handle_ptr, schema->attrNames[i], schema->typeLength[i]-1); // Setting attribute name
+        page_handle_ptr[schema->typeLength[i]-1] = '\0';  // Ensure null-termination
+        page_handle_ptr += schema->typeLength[i];
 
         // Setting data type of attribute
         *(int*)page_handle_ptr = (int)schema->dataTypes[i];
@@ -126,19 +125,24 @@ extern RC createTable(char *name, Schema *schema) {
 
 // This function opens a table and loads its schema and metadata into the RM_TableData structure
 RC openTable(RM_TableData *rel, char *name) {
-    SM_FileHandle fileHandle;
-    SM_PageHandle pageHandle;    
-    int attributeCount, keySize, k;
+    SM_FileHandle* fileHandle = (SM_FileHandle*) rel->mgmtData->fileHandle;
+    SM_PageHandle* pageHandle = (SM_PageHandle*) rel->mgmtData->pageHandle;    
+    int attributeCount, keySize, i;
     RC rc;
+    
     // Allocate and copy the table's name
     rel->name = (char *) malloc(strlen(name) + 1);
     strcpy(rel->name, name);
 
+    // Allocate and copy the table's name
+    rel->mgmtData = (TableMgmtData *) malloc(sizeof(TableMgmtData));
+    rel->mgmtData->numTuples = 0;
+    
     // Open the page file for the table using storage manager and if fails return the fail
-    if ((rc = openPageFile(name, &fileHandle)) != RC_OK) return rc;
+    if ((rc = openPageFile(name, fileHandle)) != RC_OK) return rc;
 
     // Pinning a page (putting it in Buffer Pool using Buffer Manager)
-    RC rc = pinPage(&record_mgr->bufferPool, &pageHandle, 0);
+    RC rc = pinPage(&record_mgr->bufferPool, pageHandle, 0);
     if (rc != RC_OK) {
         free(rel->name);  // Clean up
         return rc;
@@ -183,56 +187,83 @@ RC openTable(RM_TableData *rel, char *name) {
     if (schema->attrNames == NULL || schema->dataTypes == NULL || schema->typeLength == NULL || schema->keyAttrs == NULL) {
         printf("Error: Memory allocation failed for schema attributes.\n");
         free(schema);
-        unpinPage(&recordManager->bufferPool, &recordManager->pageHandle);
+        unpinPage(&record_mgr->bufferPool, &pageHandle);
         free(rel->name);
-        return RC_MEMORY_ERROR;
+        return -99;
     }
-
+    
     // Allocate memory space for storing attribute name for each attribute
-    for (k = 0; k < attributeCount; k++) {
-        schema->attrNames[k] = (char*) malloc(ATTRIBUTE_SIZE);
-        if (schema->attrNames[k] == NULL) {
+    for (i = 0; i < attributeCount; i++) {
+        schema->attrNames[i] = (char*) malloc(schema->typeLength[i]);
+        if (schema->attrNames[i] == NULL) {
             printf("Error: Memory allocation failed for attribute name.\n");
-            for (int i = 0; i < k; i++) {
-                free(schema->attrNames[i]);
-            }
+            for (int i = 0; i < i; i++) free(schema->attrNames[i]);
             free(schema->attrNames);
             free(schema->dataTypes);
             free(schema->typeLength);
             free(schema->keyAttrs);
             free(schema);
-            unpinPage(&recordManager->bufferPool, &recordManager->pageHandle);
+            unpinPage(&record_mgr->bufferPool, &pageHandle);
             free(rel->name);
-            return RC_MEMORY_ERROR;
+            return -99;
         }
-    }
-
-    // Reading the attributes from the page file
-    for (k = 0; k < schema->numAttr; k++) {
         // Setting attribute name
-        strncpy(schema->attrNames[k], pageHandle, ATTRIBUTE_SIZE);
-        pageHandle += ATTRIBUTE_SIZE;
+        strncpy(schema->attrNames[i], pageHandle, schema->typeLength[i]);
+        pageHandle += schema->typeLength[i];
 
         // Setting data type of attribute
-        schema->dataTypes[k] = *(DataType*)pageHandle;  // Use the correct DataType
+        schema->dataTypes[i] = *(DataType*)pageHandle;  // Use the correct DataType
         pageHandle += sizeof(int);
 
         // Setting length of datatype (length of STRING) of the attribute
-        schema->typeLength[k] = *(int*)pageHandle;
+        schema->typeLength[i] = *(int*)pageHandle;
         pageHandle += sizeof(int);
     }
 
     // Reading primary key information (key attribute indices)
-    for (k = 0; k < schema->keySize; k++) {
-        schema->keyAttrs[k] = *(int*)pageHandle;
+    for (i = 0; i < schema->keySize; i++) {
+        schema->keyAttrs[i] = *(int*)pageHandle;
         pageHandle += sizeof(int);
     }
 
     // Setting the newly created schema to the table's schema
     rel->schema = schema;
+    rel->mgmtData->recordSize = getRecordSize(schema);
+
+    int recordSize = 0;
+    for (int i = 0; i < schema->numAttr; i++) recordSize += schema->typeLength[i];
+    int numRecords = PAGE_SIZE / getRecordSize(schema); 
+    rel->mgmtData->numRecords = numRecords;
+    
+    SM_FileHandle fileHandle; // File handling using the storage manager
+
+    rc = openPageFile(name, &fileHandle); // Opening the newly created page file
+    if (rc != RC_OK) return rc;
+    ensureCapacity(100, &fileHandle);
+     // Determine the total number of pages (this could be defined by you)
+    int totalPages = fileHandle->totalNumPages; // For example, assume we start with 100 pages
+    int totalRecords = numRecords * totalPages;
+
+    // Allocate memory for freeRecords
+    rel->mgmtData->freeRecords = (RID *)malloc(totalRecords * sizeof(RID));
+    int numFreeRecords = 0;
+    // Initialize each RID with page and slot numbers
+    int recordIndex = 0;
+    for (int page = 1; page < totalPages; page++) {
+        for (int slot = 0; slot < numRecords; slot++) {
+            rel->mgmtData->freeRecords[recordIndex].page = page;
+            rel->mgmtData->freeRecords[recordIndex].slot = slot;
+            recordIndex++;
+            numFreeRecords++;
+        }
+    }
+    rel->mgmtData->numFreeRecords = numFreeRecords;
+    rel->mgmtData->totalNumRecords = 0;
+
+
 
     // Unpinning the page (removing it from the buffer pool)
-    rc = unpinPage(&recordManager->bufferPool, &recordManager->pageHandle);
+    rc = unpinPage(&record_mgr->bufferPool, &pageHandle);
     if (rc != RC_OK) {
         printf("Error: Failed to unpin page for table '%s'. Error code: %d\n", name, rc);
         freeSchema(schema);
@@ -243,40 +274,306 @@ RC openTable(RM_TableData *rel, char *name) {
     return RC_OK;
 }
 
+RC closeTable(RM_TableData *rel) {
+    // Check if the table is valid
+    if (rel == NULL || rel->name == NULL || &record_mgr->bufferPool == NULL) {
+        return RC_FILE_NOT_FOUND;
+    }
 
-RC closeTable (RM_TableData *rel){
-    // TODO    
+    // Access the existing buffer pool for the table
+    BM_BufferPool *bufferPool = &record_mgr->bufferPool;
+    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) &bufferPool->mgmtData;
+
+    forceFlushPool(bufferPool);
+
+    // Free the schema and other allocated resources
+    freeSchema(rel->schema);
+    rel->schema = NULL;
+
+    return RC_OK;
 }
-RC deleteTable (char *name){
-    // TODO    
+
+RC deleteTable(char *name) {
+    // Check if the table name is valid
+    if (name == NULL) return RC_FILE_NOT_FOUND;
+    
+    // Use destroyPageFile to delete the table file from disk
+    RC rc = destroyPageFile(name);
+    if (rc != RC_OK) return rc;  // Return the error code if file deletion fails
+    
+    return RC_OK;
 }
-int getNumTuples (RM_TableData *rel){
-    // TODO    
+
+int getNumTuples(RM_TableData *rel) {
+    // Check if the table is valid
+    if (rel == NULL || rel->mgmtData == NULL) return RC_FILE_NOT_FOUND;
+    
+    return (int) rel->mgmtData->numTuples;
 }
+
+
+RID pullFreeRID(RM_TableData *rel) {
+    
+    // Retrieve the first free RID
+    RID freeRID = rel->mgmtData->freeRecords[0];
+    
+    // Shift the remaining RIDs in the array to remove the first one
+    for (int i = 1; i < rel->mgmtData->numFreeRecords; i++) rel->mgmtData->freeRecords[i - 1] = rel->mgmtData->freeRecords[i];    
+    rel->mgmtData->numFreeRecords--; // Decrement the number of free records
+
+    if (rel->mgmtData->numFreeRecords == 0) {
+        // Expand the freeRecords array with a new page of RIDs
+        int newPage = freeRID.page + 1;
+        int numRecords = rel->mgmtData->numRecords;
+        int newTotalRecords = rel->mgmtData->numFreeRecords + numRecords;
+
+        // Reallocate memory to accommodate the new RIDs
+        rel->mgmtData->freeRecords = realloc(rel->mgmtData->freeRecords, newTotalRecords * sizeof(RID));
+
+        // Initialize new RIDs for the new page
+        for (int i = 0; i < numRecords; i++) {
+            rel->mgmtData->freeRecords[rel->mgmtData->numFreeRecords + i].page = newPage;
+            rel->mgmtData->freeRecords[rel->mgmtData->numFreeRecords + i].slot = i;
+        }
+
+        rel->mgmtData->numFreeRecords += numRecords; // Update the number of free records
+    }
+
+    return freeRID;
+}
+
 
 // HANDLING RECORDS IN A TABLE
-RC insertRecord (RM_TableData *rel, Record *record){
-    // TODO    
-}
-RC deleteRecord (RM_TableData *rel, RID id){
-    // TODO    
-}
-RC updateRecord (RM_TableData *rel, Record *record){
-    // TODO    
-}
-RC getRecord (RM_TableData *rel, RID id, Record *record){
-    // TODO    
+RC insertRecord(RM_TableData *rel, Record *record) {
+    TableMgmtData tb_data = *(TableMgmtData*) &rel->mgmtData;
+    
+    // Retrieve information from the table management structure
+    int recordSize = tb_data.recordSize;        // Size of each record
+    int blockfactor = tb_data.numRecords;          // Number of records per page
+    BM_PageHandle *page = &tb_data.pageHandle;  // Page handle for buffer operations
+    BM_BufferPool *bm = (BM_BufferPool *) &tb_data.bufferManager;    // Buffer pool for the table
+
+    RID nextRecord = pullFreeRID(rel);
+
+    if (pinPage(bm, page, nextRecord.page) != RC_OK) return -99; // Pin the page into memory
+
+    char *pageData = page->data; // Pointer for convenient page data access, no malloc/free required
+
+    // Calculate offset where the record will be inserted within the page
+    int offset = nextRecord.slot * recordSize; // Slot start position, with slot numbers starting at 0
+
+    // Copy record data to the designated position in the page
+    memcpy(pageData + offset, record->data, recordSize);
+
+    // Mark the page as dirty since it has been modified
+    RC rc = markDirty(bm, page) ;
+    if (rc != RC_OK) return rc;
+    
+    // Unpin the page after modification
+    RC rc = unpinPage(bm, page);
+    if (rc != RC_OK) return rc;
+    
+    record->id.page = nextRecord.page;
+    record->id.slot = nextRecord.slot;
+
+    tb_data.totalNumRecords++; // Update the total record count in the table
+    
+    return RC_OK;
 }
 
+RC deleteRecord(RM_TableData *rel, RID id) {
+    TableMgmtData *tb_data = (TableMgmtData *)rel->mgmtData;
+
+    // Retrieve information from the table management structure
+    BM_PageHandle *page = tb_data->pageHandle;
+    BM_BufferPool *bm = tb_data->bufferManager;
+    int recordSize = tb_data->recordSize;
+
+    // Pin the page containing the record
+    RC rc = pinPage(bm, page, id.page);
+    if (rc != RC_OK) return rc;
+
+    // Calculate the offset within the page for this record
+    char *pageData = page->data;
+    int offset = id.slot * recordSize;
+
+    // Mark the record as deleted (e.g., zero out its memory)
+    memset(pageData + offset, 0, recordSize);
+
+    // Mark page as dirty and unpin it
+    rc = markDirty(bm, page);
+    if (rc != RC_OK) return rc;
+
+    rc = unpinPage(bm, page);
+    if (rc != RC_OK) return rc;
+
+    // Add the deleted RID back to the first position in the free list
+    tb_data->freeRecords = realloc(tb_data->freeRecords, (tb_data->numFreeRecords + 1) * sizeof(RID));
+    if (tb_data->freeRecords == NULL) return -99;
+
+    // Shift existing RIDs to the right by one position
+    for (int i = tb_data->numFreeRecords; i > 0; i--) tb_data->freeRecords[i] = tb_data->freeRecords[i - 1];
+
+    // Insert the new RID at the first position
+    tb_data->freeRecords[0] = id;
+    tb_data->numFreeRecords++;
+
+    return RC_OK;
+}
+
+RC updateRecord(RM_TableData *rel, Record *record) {
+    TableMgmtData *tb_data = (TableMgmtData *)rel->mgmtData;
+    
+    // Retrieve information from the table management structure
+    BM_PageHandle *page = tb_data->pageHandle;
+    BM_BufferPool *bm = tb_data->bufferManager;
+    int recordSize = tb_data->recordSize;
+    
+    // Pin the page containing the record to update
+    RC rc = pinPage(bm, page, record->id.page);
+    if (rc != RC_OK) return rc;
+
+    // Calculate the offset within the page for this record
+    char *pageData = page->data;
+    int offset = record->id.slot * recordSize;
+
+    // Copy the new record data into the page at the calculated offset
+    memcpy(pageData + offset, record->data, recordSize);
+
+    // Mark page as dirty and unpin it
+    rc = markDirty(bm, page);
+    if (rc != RC_OK) return rc;
+
+    rc = unpinPage(bm, page);
+    if (rc != RC_OK) return rc;
+
+    return RC_OK;
+}
+
+RC getRecord(RM_TableData *rel, RID id, Record *record) {
+    TableMgmtData *tb_data = (TableMgmtData *)rel->mgmtData;
+    
+    // Retrieve information from the table management structure
+    BM_PageHandle *page = tb_data->pageHandle;
+    BM_BufferPool *bm = tb_data->bufferManager;
+    int recordSize = tb_data->recordSize;
+
+    // Pin the page containing the record
+    RC rc = pinPage(bm, page, id.page);
+    if (rc != RC_OK) return rc;
+
+    // Calculate the offset within the page for this record
+    char *pageData = page->data;
+    int offset = id.slot * recordSize;
+
+    // Copy the record data from the page into the provided record structure
+    memcpy(record->data, pageData + offset, recordSize);
+
+    // Set the RID in the record to match the requested RID
+    record->id = id;
+
+    // Unpin the page after reading the data
+    rc = unpinPage(bm, page);
+    if (rc != RC_OK) return rc;
+
+    return RC_OK;
+}
+
+
 // SCANS
-RC startScan (RM_TableData *rel, RM_ScanHandle *scan, Expr *cond){
-    // TODO    
+RC startScan(RM_TableData *rel, RM_ScanHandle *scan, Expr *cond) {
+    // Set up the scan handle
+    scan->rel = rel;
+
+    // Allocate memory for scan management data
+    ScanMgmtData *scanData = (ScanMgmtData *)malloc(sizeof(ScanMgmtData));
+    if (scanData == NULL) return -99;
+
+    // Initialize scan data fields
+    scanData->currentRecord.page = 1;     // Start at the first page
+    scanData->currentRecord.slot = 0;     // Start at the first slot in the page
+    scanData->condition = cond;    // Set the condition for filtering records
+
+    // Attach the scan data to the scan handle
+    scan->mgmtData = scanData;
+
+    return RC_OK;
 }
-RC next (RM_ScanHandle *scan, Record *record){
-    // TODO    
+
+#include "record_mgr.h"
+#include "expr.h"
+#include <stdlib.h>
+
+RC next(RM_ScanHandle *scan, Record *record) {
+    RM_TableData *rel = scan->rel;
+    ScanMgmtData *scanData = (ScanMgmtData *)scan->mgmtData;
+    BM_PageHandle page;
+
+    BM_BufferPool *bm = rel->mgmtData->bufferManager;
+    int recordSize = rel->mgmtData->recordSize;
+    int recordsPerPage = rel->mgmtData->numRecords;
+    int totalNumRecords = rel->mgmtData->totalNumRecords;
+
+    // Calculate the starting position based on currentPage and currentSlot
+    int startRecordIndex = (scanData->currentRecord.page * recordsPerPage) + scanData->currentRecord.slot;
+
+    // Iterate over all records starting from the current scan position
+    for (int recordIndex = startRecordIndex; recordIndex < totalNumRecords; recordIndex++) {
+        int pageNum = recordIndex / recordsPerPage;
+        int slot = recordIndex % recordsPerPage;
+
+        // Pin the page where the current record is located
+        RC rc = pinPage(bm, &page, pageNum);
+        if (rc != RC_OK) return rc;
+
+        // Calculate the offset within the page
+        char *pageData = page.data;
+        int offset = slot * recordSize;
+
+        // Copy the record's data from the page into the Record structure
+        memcpy(record->data, pageData + offset, recordSize);
+        record->id.page = pageNum;
+        record->id.slot = slot;
+
+        // Evaluate the condition, if specified
+        if (scanData->condition != NULL) {
+            Value *result = NULL;
+            rc = evalExpr(record, rel->schema, scanData->condition, &result);
+            if (rc != RC_OK) {
+                unpinPage(bm, &page);
+                return rc;
+            }
+
+            bool matches = (result->v.boolV == TRUE);
+            free(result);
+
+            if (!matches) {
+                unpinPage(bm, &page);
+                continue; // Skip this record if it doesn't match
+            }
+        }
+
+        // Update scan position for the next call
+        scanData->currentRecord.page = pageNum;
+        scanData->currentRecord.slot = slot + 1;
+
+        // Unpin the page and return the matching record
+        unpinPage(bm, &page);
+        return RC_OK;
+    }
+
+    // No more matching records
+    return RC_RM_NO_MORE_TUPLES;
 }
-RC closeScan (RM_ScanHandle *scan){
-    // TODO    
+
+RC closeScan(RM_ScanHandle *scan) {
+    // Free the scan management data
+    if (scan->mgmtData != NULL) {
+        free(scan->mgmtData);
+        scan->mgmtData = NULL;
+    }
+    
+    return RC_OK;
 }
 
 // DEALING WITH SCHEMAS

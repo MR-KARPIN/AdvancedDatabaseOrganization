@@ -35,6 +35,15 @@ typedef struct BM_PageHandle {
 	int fixCount;
 } BM_PageHandle;
 
+// Structure to hold buffer pool management data
+typedef struct BufferPoolMgmtData {
+    BM_PageHandle *pageFrames;   // Array of page frames to store pages in memory
+    int numReadIO;   // Number of Reads fow the statistics
+	int numWriteIO;   // Number of Writes fow the statistics
+    int next;   // FIFO utilization
+    int* LRU;
+} BufferPoolMgmtData;
+
 // convenience macros
 #define MAKE_POOL()					\
 		((BM_BufferPool *) malloc (sizeof(BM_BufferPool)))

@@ -48,8 +48,21 @@ typedef struct RM_TableData
 {
 	char *name;
 	Schema *schema;
-	void *mgmtData;
+	TableMgmtData *mgmtData;
 } RM_TableData;
+
+typedef struct TableMgmtData {
+	RID *freeRecords;
+	int numFreeRecords;
+    int numTuples;
+	int recordSize;
+	int numRecords;
+	int totalNumRecords;
+	SM_FileHandle* fileHandle;
+    SM_PageHandle* pageHandle;  
+	BM_BufferPool* bufferManager;
+} TableMgmtData;
+
 
 #define MAKE_STRING_VALUE(result, value)				\
 		do {									\
