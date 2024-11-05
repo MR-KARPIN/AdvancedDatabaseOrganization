@@ -1,6 +1,6 @@
 # Compiler and flags
-CC = gcc
-CFLAGS = -Wall -g
+CC = clang
+CFLAGS = -fsanitize=address -g
 
 # Source files
 SRCS = buffer_mgr.c buffer_mgr_stat.c dberror.c storage.c  # Adjusted name here
