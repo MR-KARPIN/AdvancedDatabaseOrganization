@@ -1,7 +1,7 @@
 #include "record_mgr.h"
-#include "record_mgr.h"
 #include "buffer_mgr.h" 
-#include "storage_mgr.h" 
+#include "storage_mgr.h"
+#include "expr.h"
 #include "dberror.h"
 #include <stdlib.h>
 
@@ -479,7 +479,6 @@ RC getRecord(RM_TableData *rel, RID id, Record *record) {
     return RC_OK;
 }
 
-
 // SCANS
 RC startScan(RM_TableData *rel, RM_ScanHandle *scan, Expr *cond) {
     // Set up the scan handle
@@ -499,10 +498,6 @@ RC startScan(RM_TableData *rel, RM_ScanHandle *scan, Expr *cond) {
 
     return RC_OK;
 }
-
-#include "record_mgr.h"
-#include "expr.h"
-#include <stdlib.h>
 
 RC next(RM_ScanHandle *scan, Record *record) {
     RM_TableData *rel = scan->rel;
@@ -577,27 +572,196 @@ RC closeScan(RM_ScanHandle *scan) {
 }
 
 // DEALING WITH SCHEMAS
-int getRecordSize (Schema *schema){
-    // TODO    
+int getRecordSize (Schema *schema)
+{
+	int size = 0; // offset set to zero
+	
+	// Iterating through all the attributes in the schema
+	for(int i = 0; i < schema->numAttr; i++)
+	{
+		switch(schema->dataTypes[i])    // Adding the size of attribute depending on type
+		{
+            // Case switch
+			case DT_STRING:
+				size = size + schema->typeLength[i];
+				break;
+			case DT_INT:
+				size = size + sizeof(int);
+				break;
+			case DT_FLOAT:
+				size = size + sizeof(float);
+				break;
+			case DT_BOOL:
+				size = size + sizeof(bool);
+				break;
+		}
+	}
+	return ++size;
 }
+
 Schema *createSchema (int numAttr, char **attrNames, DataType *dataTypes, int *typeLength, int keySize, int *keys){
-    // TODO    
+    // Allocate memory for the schema
+    Schema *schema = (Schema *) malloc(sizeof(Schema));
+    if (!schema) return NULL;
+
+    // Pointers to arrays of following attributes
+    schema->numAttr = numAttr;
+    schema->attrNames = attrNames;
+    schema->dataTypes = dataTypes;
+    schema->typeLength = typeLength;
+    schema->keySize = keySize;
+    schema->keyAttrs = keys;
+
+    return schema; 
 }
+
 RC freeSchema (Schema *schema){
-    // TODO    
+    for (int i = 0; i < schema->numAttr; i++) 
+        free(schema->attrNames[i]);
+    free(schema->attrNames);
+    free(schema);
+    return RC_OK;
 }
 
 // DEALING WITH RECORDS AND ATTRIBUTE VALUES
 RC createRecord (Record **record, Schema *schema){
-    // TODO    
+
+    Record *rec = (Record*)malloc(sizeof(Record));      // Creating a new record
+    int recordSize = getRecordSize(schema);     // Get size of new record
+    rec -> data = (char*)malloc(recordSize);    // Allocating record size
+	memset(rec -> data, 0, recordSize);
+	*record = rec;
+
+    return RC_OK;
+    
 }
 RC freeRecord (Record *record){
-    // TODO    
-}
-RC getAttr (Record *record, Schema *schema, int attrNum, Value **value){
-    // TODO    
-}
-RC setAttr (Record *record, Schema *schema, int attrNum, Value *value){
-    // TODO    
+    free(record->data);
+    free(record);
+    return RC_OK;  
 }
 
+//this method is used to get an attribute
+//this method is used to get the value of one attribute in a record
+//int attrNum is the the position os this attribute, and the result stores in value
+RC getAttr(Record *record, Schema *schema, int attrNum, Value **value)
+{
+	int offset = 0;
+	int i = 0;
+
+	// Allocating space for value data where attribute values will be stored
+	Value *val = (Value*)malloc(sizeof(Value));
+
+	offset += (attrNum +1); // Adding empty spaces to the offset
+
+	for(i = 0; i < attrNum; i++) // Adding the length of attributes to offset
+	{
+		switch( schema -> dataTypes[i])
+        {
+            case DT_INT:
+                offset += sizeof(int);
+                break;
+            case DT_FLOAT:
+                offset += sizeof(float);
+                break;
+            case DT_BOOL:
+                offset += sizeof(bool);
+                break;
+            case DT_STRING:
+                offset += schema -> typeLength[i];
+                break;
+            default:
+                break;
+        }
+	}
+
+	char* result;
+	// Getting values according to the dataTypes in schema
+	switch(schema -> dataTypes[attrNum])
+	{
+		case DT_INT:
+		  val -> dt = DT_INT;
+		  result = (char*)malloc(sizeof(int) +1);
+		  memcpy(result, record -> data + offset,sizeof(int));
+		  result[sizeof(int) +1] = '\0';
+		  val -> v.intV = atoi(result);
+		  result = NULL;
+		  break;
+		case DT_FLOAT:
+		  val -> dt = DT_FLOAT;	 
+		  memcpy(&(val->v.floatV),record->data+ offset,sizeof(float));
+		  break;
+		case DT_BOOL:
+		  val -> dt = DT_BOOL;
+		   memcpy(&(val->v.boolV),record -> data + offset,sizeof(bool));
+		  break;
+		case DT_STRING:
+		  val -> dt = DT_STRING;
+		  int size = schema -> typeLength[i];
+          char *result = malloc(size+1);
+          strncpy(result, record->data+ offset, size); 
+          result[size]='\0';
+          val->v.stringV = result;
+		  break;
+		
+	}
+	*value = val;
+	return RC_OK;
+	
+}
+
+
+//this method is used to set an attribute
+RC setAttr(Record *record, Schema *schema, int attrNum, Value *value) 
+{
+    int offset = 0;
+
+    //caculate the offset of this attribute
+    offset += (attrNum+1);
+    for(int i = 0; i < attrNum; i++)
+	{
+		switch( schema -> dataTypes[i])
+        {
+            case DT_INT:
+                offset += sizeof(int);
+                break;
+            case DT_FLOAT:
+                offset += sizeof(float);
+                break;
+            case DT_BOOL:
+                offset += sizeof(bool);
+                break;
+            case DT_STRING:
+                offset += schema -> typeLength[i];
+                break;
+            default:
+                break;
+        }
+	}
+
+ 
+    char *pos = record -> data;
+    pos += offset;
+
+    // Writing data to the record according to the datatype
+    switch(value->dt)   {
+
+        case DT_INT:
+            sprintf(pos,"%d",value->v.intV);
+            break;
+
+        case DT_FLOAT:
+            sprintf(pos,"%f",value->v.floatV);     
+            break;
+
+        case DT_BOOL:
+            sprintf(pos,"%i",value->v.boolV);
+            break;
+
+        case DT_STRING: 
+            sprintf(pos,"%s",value->v.stringV);
+            break;
+        }
+
+    return RC_OK;
+}
