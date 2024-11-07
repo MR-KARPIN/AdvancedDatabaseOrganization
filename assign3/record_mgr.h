@@ -5,6 +5,13 @@
 #include "expr.h"
 #include "tables.h"
 
+
+typedef struct ScanMgmtData
+{
+	RID currentRecord;        
+    Expr *condition;        
+} ScanMgmtData;
+
 // Bookkeeping for scans
 typedef struct RM_ScanHandle
 {
@@ -12,11 +19,6 @@ typedef struct RM_ScanHandle
 	ScanMgmtData *mgmtData;
 } RM_ScanHandle;
 
-typedef struct ScanMgmtData
-{
-	RID currentRecord;        
-    Expr *condition;        
-} ScanMgmtData;
 
 // table and manager
 extern RC initRecordManager (void *mgmtData);
