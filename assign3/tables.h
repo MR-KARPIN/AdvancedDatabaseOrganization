@@ -1,11 +1,7 @@
 #ifndef TABLES_H
 #define TABLES_H
 
-
 #include "dt.h"
-#include "storage_mgr.h"
-#include "buffer_mgr.h"
-
 
 // Data Types, Records, and Schemas
 typedef enum DataType {
@@ -47,18 +43,6 @@ typedef struct Schema
 	int keySize;
 } Schema;
 
-typedef struct TableMgmtData {
-	RID *freeRecords;
-	int numFreeRecords;
-    int numTuples;
-	int recordSize;
-	int numRecords;
-	int totalNumRecords;
-	SM_FileHandle* fileHandle;
-    BM_PageHandle* pageHandle;  
-	BM_BufferPool* bufferManager;
-} TableMgmtData;
-
 // TableData: Management Structure for a Record Manager to handle one relation
 typedef struct RM_TableData
 {
@@ -67,7 +51,17 @@ typedef struct RM_TableData
 	TableMgmtData *mgmtData;
 } RM_TableData;
 
-
+typedef struct TableMgmtData {
+	RID *freeRecords;
+	int numFreeRecords;
+    int numTuples;
+	int recordSize;
+	int numRecords;
+	int totalNumRecords;
+	SM_FileHandle* fileHandle;
+    SM_PageHandle* pageHandle;  
+	BM_BufferPool* bufferManager;
+} TableMgmtData;
 
 
 #define MAKE_STRING_VALUE(result, value)				\
@@ -107,4 +101,4 @@ extern char *serializeRecord(Record *record, Schema *schema);
 extern char *serializeAttr(Record *record, Schema *schema, int attrNum);
 extern char *serializeValue(Value *val);
 
-#endif // TABLES_H
+#endif

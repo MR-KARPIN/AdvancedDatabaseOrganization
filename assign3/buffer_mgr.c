@@ -160,8 +160,6 @@ RC pinPage(BM_BufferPool *const bm, BM_PageHandle *const page,
 
 	case RS_LRU:
 		pinPageLRU(bm, page, pageNum);
-    default:
-        break;
 	}
 	return RC_OK;
 }

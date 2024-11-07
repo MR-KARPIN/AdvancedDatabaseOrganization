@@ -28,14 +28,6 @@ typedef struct BM_BufferPool {
 	// manager needs for a buffer pool
 } BM_BufferPool;
 
-
-typedef struct BM_PageHandle {
-	PageNumber pageNum;
-	char *data;
-	bool dirtyFlag;
-	int fixCount;
-} BM_PageHandle;
-
 // Structure to hold buffer pool management data
 typedef struct BufferPoolMgmtData {
     BM_PageHandle *pageFrames;   // Array of page frames to store pages in memory
@@ -44,6 +36,13 @@ typedef struct BufferPoolMgmtData {
     int next;   // FIFO utilization
     int* LRU;
 } BufferPoolMgmtData;
+
+typedef struct BM_PageHandle {
+	PageNumber pageNum;
+	char *data;
+	bool dirtyFlag;
+	int fixCount;
+} BM_PageHandle;
 
 // convenience macros
 #define MAKE_POOL()					\

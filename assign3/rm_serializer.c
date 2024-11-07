@@ -15,12 +15,11 @@ typedef struct VarString {
 
 #define MAKE_VARSTRING(var)				\
 		do {							\
-			(var) = (VarString *) malloc(sizeof(VarString));	\
+			var = (VarString *) malloc(sizeof(VarString));	\
 			var->size = 0;					\
 			var->bufsize = 100;					\
-			var->buf = calloc(100,1);			\
+			var->buf = calloc(100,1);//Fixed:Summer 21: calloc(100,0);			\
 		} while (0)
-
 
 #define FREE_VARSTRING(var)			\
 		do {						\
@@ -63,7 +62,7 @@ typedef struct VarString {
 #define APPEND(var, ...)			\
 		do {						\
 			char *tmp = malloc(10000);			\
-			snprintf(tmp, sizeof(tmp), __VA_ARGS__);			\
+			sprintf(tmp, __VA_ARGS__);			\
 			APPEND_STRING(var,tmp);			\
 			free(tmp);					\
 		} while(0)
@@ -72,7 +71,8 @@ typedef struct VarString {
 static RC attrOffset (Schema *schema, int attrNum, int *result);
 
 // implementations
-char *serializeTableInfo(RM_TableData *rel)
+char *
+serializeTableInfo(RM_TableData *rel)
 {
 	VarString *result;
 	MAKE_VARSTRING(result);
@@ -83,7 +83,8 @@ char *serializeTableInfo(RM_TableData *rel)
 	RETURN_STRING(result);
 }
 
-char *serializeTableContent(RM_TableData *rel)
+char * 
+serializeTableContent(RM_TableData *rel)
 {
 	int i;
 	VarString *result;
