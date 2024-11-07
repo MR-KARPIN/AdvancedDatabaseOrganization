@@ -1,9 +1,10 @@
+#include <string.h>
 #include "record_mgr.h"
-#include "record_mgr.h"
-#include "buffer_mgr.h" 
+#include "buffer_mgr.h"
 #include "storage_mgr.h" 
 #include "dberror.h"
 #include <stdlib.h>
+
 
 // TABLE AND MANAGER
 
@@ -22,7 +23,7 @@ RecordManager* record_mgr;  // Global pointer to Record Manager
 #define PAGE_SIZE 4096  // Example size for pages, adjust as needed
 
 // Initialize the record manager.
-RC initRecordManager() {
+RC initRecordManager(void* mgmtData) {
     // Allocate memory for the RecordManager structure
     record_mgr = (RecordManager*) malloc(sizeof(RecordManager));
     if (record_mgr == NULL) 
@@ -41,14 +42,13 @@ RC initRecordManager() {
 
 // Shutdown the record manager and free associated resources.
 RC shutdownRecordManager() {
-    if (&record_mgr->bufferPool == NULL)
+    if (record_mgr == NULL)
         printf("Error: Buffer pool not initialized or already shut down.\n");
 
     // Shutdown the buffer pool
     RC rc = shutdownBufferPool(&record_mgr->bufferPool);
     if (rc != RC_OK) return rc;  // Return the error code from buffer pool shutdown
 
-    free(&record_mgr->bufferPool);
     
     return RC_OK;  // Return success if shutdown is successful
 }
@@ -56,11 +56,6 @@ RC shutdownRecordManager() {
 
 // This function creates a table with table name "name" having schema specified by "schema"
 extern RC createTable(char *name, Schema *schema) {
-    
-    // Prepare data buffer for storing schema information
-    char data[PAGE_SIZE];
-    char *page_handle_ptr = data;
-
     // |-----------------------|
     //  n_scores = 0
     // |-----------------------|
@@ -74,59 +69,87 @@ extern RC createTable(char *name, Schema *schema) {
     //     ...
     // |-----------------------|
     
-    *(int*)page_handle_ptr = 0;  // Number of scores starts at 0 at the beggining
-    page_handle_ptr += sizeof(int);  
+    if (name == NULL) {
+        printf("Error: Table name is NULL.\n");
+        return -99;
+    }
+    
+    if (schema == NULL) {
+        printf("Error: Schema is NULL.\n");
+        return -99;
+    }
 
-    *(int*)page_handle_ptr = 1; // Setting first page for actual data (0th page is for schema)
-    page_handle_ptr += sizeof(int);  
+    char data[PAGE_SIZE];
+    char *page_handle_ptr = data;
 
-    *(int*)page_handle_ptr = schema->numAttr; // Setting the number of attributes
-    page_handle_ptr += sizeof(int);  
+    *(int *)page_handle_ptr = 0;  // Initialize number of records
+    page_handle_ptr += sizeof(int);
 
-    *(int*)page_handle_ptr = schema->keySize; // Setting the key size of the attributes
-    page_handle_ptr += sizeof(int);  
+    *(int *)page_handle_ptr = 1;  // Set first page for data
+    page_handle_ptr += sizeof(int);
 
-    // Write schema information for each attribute
+    *(int *)page_handle_ptr = schema->numAttr;  // Set number of attributes
+    page_handle_ptr += sizeof(int);
+
+    *(int *)page_handle_ptr = schema->keySize;  // Set key size
+    page_handle_ptr += sizeof(int);
+
+    // Writing schema attributes
     for (int i = 0; i < schema->numAttr; i++) {
-        
-        strncpy(page_handle_ptr, schema->attrNames[i], schema->typeLength[i]-1); // Setting attribute name
-        page_handle_ptr[schema->typeLength[i]-1] = '\0';  // Ensure null-termination
-        page_handle_ptr += schema->typeLength[i];
+        if (schema->attrNames[i] == NULL) {
+            printf("Error: Attribute name for attribute %d is NULL.\n", i);
+            return -99;
+        }
+        strncpy(page_handle_ptr, schema->attrNames[i], strlen(schema->attrNames[i]));
+        page_handle_ptr[strlen(schema->attrNames[i]) - 1] = '\0';
+        page_handle_ptr += strlen(schema->attrNames[i]);
 
-        // Setting data type of attribute
-        *(int*)page_handle_ptr = (int)schema->dataTypes[i];
+        printf("hola1\n\n");
+        printf("%i\n\n",&schema->dataTypes[i]);
+        printf("hola2\n\n");
+        
+        *(int *)page_handle_ptr = (int) schema->dataTypes[i];
         page_handle_ptr += sizeof(int);
 
-        // Setting length of the attribute type (e.g., for strings)
-        *(int*)page_handle_ptr = schema->typeLength[i];
+        *(int *)page_handle_ptr = schema->typeLength[i];
         page_handle_ptr += sizeof(int);
     }
 
-    SM_FileHandle fileHandle; // File handling using the storage manager
-
-    RC rc = createPageFile(name); // Creating a page file with the table name using the storage manager
-    if (rc != RC_OK) return rc;
-
-    rc = openPageFile(name, &fileHandle); // Opening the newly created page file
-    if (rc != RC_OK) return rc;
-
-    rc = writeBlock(0, &fileHandle, data); // Writing the schema to the first page of the page file
+    // Initialize and open page file
+    SM_FileHandle fileHandle;
+    RC rc = createPageFile(name);
     if (rc != RC_OK) {
-        closePageFile(&fileHandle);  // Close the file before returning
+        printf("Error: Failed to create page file '%s' with error code %d.\n", name, rc);
         return rc;
     }
 
-    rc = closePageFile(&fileHandle); // Closing the page file after writing the schema
-    if (rc != RC_OK) return rc;
-    
-    return RC_OK;  // Return success
+    rc = openPageFile(name, &fileHandle);
+    if (rc != RC_OK) {
+        printf("Error: Failed to open page file '%s' with error code %d.\n", name, rc);
+        return rc;
+    }
+
+    rc = writeBlock(0, &fileHandle, data);
+    if (rc != RC_OK) {
+        printf("Error: Failed to write to block 0 of file '%s' with error code %d.\n", name, rc);
+        closePageFile(&fileHandle);
+        return rc;
+    }
+
+    rc = closePageFile(&fileHandle);
+    if (rc != RC_OK) {
+        printf("Error: Failed to close page file '%s' with error code %d.\n", name, rc);
+    }
+
+    return rc;
 }
+
 
 
 // This function opens a table and loads its schema and metadata into the RM_TableData structure
 RC openTable(RM_TableData *rel, char *name) {
     SM_FileHandle* fileHandle = (SM_FileHandle*) rel->mgmtData->fileHandle;
-    SM_PageHandle* pageHandle = (SM_PageHandle*) rel->mgmtData->pageHandle;    
+    BM_PageHandle* pageHandle = (BM_PageHandle*) rel->mgmtData->pageHandle;    
     int attributeCount, keySize, i;
     RC rc;
     
@@ -142,7 +165,7 @@ RC openTable(RM_TableData *rel, char *name) {
     if ((rc = openPageFile(name, fileHandle)) != RC_OK) return rc;
 
     // Pinning a page (putting it in Buffer Pool using Buffer Manager)
-    RC rc = pinPage(&record_mgr->bufferPool, pageHandle, 0);
+    rc = pinPage(&record_mgr->bufferPool, pageHandle, 0);
     if (rc != RC_OK) {
         free(rel->name);  // Clean up
         return rc;
@@ -170,7 +193,7 @@ RC openTable(RM_TableData *rel, char *name) {
     // Allocating memory space for the schema
     Schema *schema = (Schema*) malloc(sizeof(Schema));
     if (schema == NULL) {
-        unpinPage(&record_mgr->bufferPool, &pageHandle);
+        unpinPage(&record_mgr->bufferPool, pageHandle);
         free(rel->name);
         return -99;
     }
@@ -187,7 +210,7 @@ RC openTable(RM_TableData *rel, char *name) {
     if (schema->attrNames == NULL || schema->dataTypes == NULL || schema->typeLength == NULL || schema->keyAttrs == NULL) {
         printf("Error: Memory allocation failed for schema attributes.\n");
         free(schema);
-        unpinPage(&record_mgr->bufferPool, &pageHandle);
+        unpinPage(&record_mgr->bufferPool, pageHandle);
         free(rel->name);
         return -99;
     }
@@ -197,18 +220,18 @@ RC openTable(RM_TableData *rel, char *name) {
         schema->attrNames[i] = (char*) malloc(schema->typeLength[i]);
         if (schema->attrNames[i] == NULL) {
             printf("Error: Memory allocation failed for attribute name.\n");
-            for (int i = 0; i < i; i++) free(schema->attrNames[i]);
+            for (int i = 0; i < schema->numAttr; i++) free(schema->attrNames[i]);
             free(schema->attrNames);
             free(schema->dataTypes);
             free(schema->typeLength);
             free(schema->keyAttrs);
             free(schema);
-            unpinPage(&record_mgr->bufferPool, &pageHandle);
+            unpinPage(&record_mgr->bufferPool, pageHandle);
             free(rel->name);
             return -99;
         }
         // Setting attribute name
-        strncpy(schema->attrNames[i], pageHandle, schema->typeLength[i]);
+        strncpy(schema->attrNames[i], (char*) pageHandle, schema->typeLength[i]);
         pageHandle += schema->typeLength[i];
 
         // Setting data type of attribute
@@ -235,11 +258,10 @@ RC openTable(RM_TableData *rel, char *name) {
     int numRecords = PAGE_SIZE / getRecordSize(schema); 
     rel->mgmtData->numRecords = numRecords;
     
-    SM_FileHandle fileHandle; // File handling using the storage manager
 
-    rc = openPageFile(name, &fileHandle); // Opening the newly created page file
+    rc = openPageFile(name, fileHandle); // Opening the newly created page file
     if (rc != RC_OK) return rc;
-    ensureCapacity(100, &fileHandle);
+    ensureCapacity(100, fileHandle);
      // Determine the total number of pages (this could be defined by you)
     int totalPages = fileHandle->totalNumPages; // For example, assume we start with 100 pages
     int totalRecords = numRecords * totalPages;
@@ -263,7 +285,7 @@ RC openTable(RM_TableData *rel, char *name) {
 
 
     // Unpinning the page (removing it from the buffer pool)
-    rc = unpinPage(&record_mgr->bufferPool, &pageHandle);
+    rc = unpinPage(&record_mgr->bufferPool, pageHandle);
     if (rc != RC_OK) {
         printf("Error: Failed to unpin page for table '%s'. Error code: %d\n", name, rc);
         freeSchema(schema);
@@ -276,7 +298,7 @@ RC openTable(RM_TableData *rel, char *name) {
 
 RC closeTable(RM_TableData *rel) {
     // Check if the table is valid
-    if (rel == NULL || rel->name == NULL || &record_mgr->bufferPool == NULL) {
+    if (rel == NULL || rel->name == NULL) {
         return RC_FILE_NOT_FOUND;
     }
 
@@ -350,7 +372,7 @@ RC insertRecord(RM_TableData *rel, Record *record) {
     // Retrieve information from the table management structure
     int recordSize = tb_data.recordSize;        // Size of each record
     int blockfactor = tb_data.numRecords;          // Number of records per page
-    BM_PageHandle *page = &tb_data.pageHandle;  // Page handle for buffer operations
+    BM_PageHandle *page = tb_data.pageHandle;  // Page handle for buffer operations
     BM_BufferPool *bm = (BM_BufferPool *) &tb_data.bufferManager;    // Buffer pool for the table
 
     RID nextRecord = pullFreeRID(rel);
@@ -370,7 +392,7 @@ RC insertRecord(RM_TableData *rel, Record *record) {
     if (rc != RC_OK) return rc;
     
     // Unpin the page after modification
-    RC rc = unpinPage(bm, page);
+    rc = unpinPage(bm, page);
     if (rc != RC_OK) return rc;
     
     record->id.page = nextRecord.page;
