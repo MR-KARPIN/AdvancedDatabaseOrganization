@@ -59,7 +59,8 @@ RC openPageFile(char *fileName, SM_FileHandle *fHandle) {
 
 // Close the page file
 RC closePageFile(SM_FileHandle *fHandle) {
-	int fileClosed = fclose(filePointer);           // Return code to store value of fclose
+    filePointer = fopen(fHandle->fileName, "r+");    // Opening the file
+    int fileClosed = fclose(filePointer);           // Return code to store value of fclose
 	if (fileClosed != 0)                            // If not closed due to fclose failing...
 		return RC_FILE_NOT_FOUND;           
     return RC_OK;                                   // File successfully closed

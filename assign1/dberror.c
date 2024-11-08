@@ -24,12 +24,12 @@ errorMessage (RC error)
 	if (RC_message != NULL)
 	{
 		message = (char *) malloc(strlen(RC_message) + 30);
-		sprintf(message, "EC (%i), \"%s\"\n", error, RC_message);
+		snprintf(message,sizeof(message), "EC (%i), \"%s\"\n", error, RC_message);
 	}
 	else
 	{
 		message = (char *) malloc(30);
-		sprintf(message, "EC (%i)\n", error);
+		snprintf(message,sizeof(message), "EC (%i)\n", error);
 	}
 
 	return message;

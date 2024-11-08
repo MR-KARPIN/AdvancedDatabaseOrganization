@@ -3,6 +3,7 @@
 #include <string.h>
 #include "buffer_mgr_stat.h"
 #include "buffer_mgr.h"
+#include "storage_mgr.h"
 
 #define MAX_ALLOWED_PAGES 1000  // or a suitable upper limit
 
@@ -194,6 +195,13 @@ RC pinPageFIFO(BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumb
             // As well as data pointer
             page->data = mgmtData->pageFrames[i].data;
 
+            SM_FileHandle *fh = malloc(sizeof(SM_FileHandle));
+            SM_PageHandle *ph = malloc(sizeof(SM_PageHandle));
+
+            // NEEDS FIXING
+            openPageFile(bm->pageFile, fh);
+            readBlock(pageNum, fh, *ph);
+            page->data = *ph;
             mgmtData->numReadIO++; // Increment read IO count
             return RC_OK;
         }
