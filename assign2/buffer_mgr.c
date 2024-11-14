@@ -139,17 +139,22 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
 
 // Shut down the buffer pool
 RC shutdownBufferPool(BM_BufferPool *const bm) {
-    PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
+	PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
+	
+	forceFlushPool(bm); // Write all dirty pages back onto disk
 
-    printf("Before forceFlushPool\n");
-    printPoolContent(bm);
-    
-    // Flush all the pages before deleting the BufferPool
-    forceFlushPool(bm);
-    printf("After forceFlushPool\n");
-    printPoolContent(bm);
+	int i;	
+	for(i = 0; i < bufferSize; i++)
+	{
+		// If fixCount != 0, it means that the contents of the page was modified by some client and has not been written back to disk.
+		if(pageFrame[i].fixCount != 0)
+		{
+			return RC_FILE_NOT_FOUND;
+		}
+	}
 
-    free(pageFrame);
+	// Releasing space occupied by the page
+	free(pageFrame);
 	bm->mgmtData = NULL;
 	return RC_OK;
 }
