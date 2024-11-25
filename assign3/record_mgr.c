@@ -630,7 +630,6 @@ int getRecordSize (Schema *schema)
 Schema *createSchema (int numAttr, char **attrNames, DataType *dataTypes, int *typeLength, int keySize, int *keys){
     // Allocate memory for the schema
     Schema *schema = (Schema *) malloc(sizeof(Schema));
-    if (!schema) return NULL;
 
     // Pointers to arrays of following attributes
     schema->numAttr = numAttr;
@@ -643,112 +642,60 @@ Schema *createSchema (int numAttr, char **attrNames, DataType *dataTypes, int *t
     return schema; 
 }
 
-RC freeSchema (Schema *schema){
-    for (int i = 0; i < schema->numAttr; i++) if (schema->attrNames[i] != NULL) free(schema->attrNames[i]);
-    free(schema->attrNames);
+RC freeSchema(Schema *schema) {
+    if (schema == NULL) {
+        return RC_OK;  // Return immediately if the schema is already NULL
+    }
+
+    // Free memory for each attribute name
+    if (schema->attrNames != NULL) {
+        for (int i = 0; i < schema->numAttr; i++) {
+            if (schema->attrNames[i] != NULL) {
+                free(schema->attrNames[i]);
+            }
+        }
+        free(schema->attrNames);
+    }
+
+    // Free the schema structure itself
     free(schema);
+
     return RC_OK;
 }
 
 // DEALING WITH RECORDS AND ATTRIBUTE VALUES
-RC createRecord (Record **record, Schema *schema){
+RC createRecord(Record **record, Schema *schema) {
+    // Allocate memory for the new record
+    Record *rec = (Record *)malloc(sizeof(Record));
 
-    Record *rec = (Record*)malloc(sizeof(Record));      // Creating a new record
-    int recordSize = getRecordSize(schema);     // Get size of new record
-    rec -> data = (char*)malloc(recordSize);    // Allocating record size
-	memset(rec -> data, 0, recordSize);
-	*record = rec;
+    // Get the size of the record and allocate space for its data
+    int recordSize = getRecordSize(schema);
+    rec->data = (char *)calloc(recordSize, sizeof(char));
+
+    // Assign the newly created record to the provided pointer
+    *record = rec;
 
     return RC_OK;
-    
-}
-RC freeRecord (Record *record){
-    free(record->data);
-    free(record);
-    return RC_OK;  
 }
 
-//this method is used to get an attribute
-//this method is used to get the value of one attribute in a record
-//int attrNum is the the position os this attribute, and the result stores in value
-RC getAttr(Record *record, Schema *schema, int attrNum, Value **value)
-{
-	int offset = 0;
-	int i = 0;
-
-	// Allocating space for value data where attribute values will be stored
-	Value *val = (Value*)malloc(sizeof(Value));
-
-	offset += (attrNum +1); // Adding empty spaces to the offset
-
-	for(i = 0; i < attrNum; i++) // Adding the length of attributes to offset
-	{
-		switch( schema -> dataTypes[i])
-        {
-            case DT_INT:
-                offset += sizeof(int);
-                break;
-            case DT_FLOAT:
-                offset += sizeof(float);
-                break;
-            case DT_BOOL:
-                offset += sizeof(bool);
-                break;
-            case DT_STRING:
-                offset += schema -> typeLength[i];
-                break;
-            default:
-                break;
-        }
-	}
-
-	char* result;
-	// Getting values according to the dataTypes in schema
-	switch(schema -> dataTypes[attrNum])
-	{
-		case DT_INT:
-		  val -> dt = DT_INT;
-		  result = (char*)malloc(sizeof(int) +1);
-		  memcpy(result, record -> data + offset,sizeof(int));
-		  result[sizeof(int) +1] = '\0';
-		  val -> v.intV = atoi(result);
-		  result = NULL;
-		  break;
-		case DT_FLOAT:
-		  val -> dt = DT_FLOAT;	 
-		  memcpy(&(val->v.floatV),record->data+ offset,sizeof(float));
-		  break;
-		case DT_BOOL:
-		  val -> dt = DT_BOOL;
-		   memcpy(&(val->v.boolV),record -> data + offset,sizeof(bool));
-		  break;
-		case DT_STRING:
-		  val -> dt = DT_STRING;
-		  int size = schema -> typeLength[i];
-          char *result = malloc(size+1);
-          strncpy(result, record->data+ offset, size); 
-          result[size]='\0';
-          val->v.stringV = result;
-		  break;
-		
-	}
-	*value = val;
-	return RC_OK;
-	
+RC freeRecord(Record *record) {
+    if (record != NULL) {
+        // Free allocated data + record itself
+        free(record->data);
+        free(record);
+    }
+    return RC_OK;
 }
 
-
-//this method is used to set an attribute
-RC setAttr(Record *record, Schema *schema, int attrNum, Value *value) 
-{
+RC getAttr(Record *record, Schema *schema, int attrNum, Value **value) {
     int offset = 0;
 
-    //calculate the offset of this attribute
-    offset += (attrNum+1);
-    for(int i = 0; i < attrNum; i++)
-	{
-		switch( schema -> dataTypes[i])
-        {
+    // Allocate memory for the value to be returned
+    Value *val = (Value *)malloc(sizeof(Value));
+
+    // Calculate the offset for the requested attribute
+    for (int i = 0; i < attrNum; i++) {
+        switch (schema->dataTypes[i]) {
             case DT_INT:
                 offset += sizeof(int);
                 break;
@@ -759,36 +706,79 @@ RC setAttr(Record *record, Schema *schema, int attrNum, Value *value)
                 offset += sizeof(bool);
                 break;
             case DT_STRING:
-                offset += schema -> typeLength[i];
+                offset += schema->typeLength[i];
                 break;
-            default:
-                break;
-        }
-	}
+    }
 
- 
-    char *pos = record -> data;
-    pos += offset;
-
-    // Writing data to the record according to the datatype
-    switch(value->dt)   {
-
+    // Get the attribute value based on its data type
+    char *dataPtr = record->data + offset;
+    switch (schema->dataTypes[attrNum]) {
         case DT_INT:
-            sprintf(pos,"%d",value->v.intV);
+            val->dt = DT_INT;
+            memcpy(&val->v.intV, dataPtr, sizeof(int));
             break;
-
         case DT_FLOAT:
-            sprintf(pos,"%f",value->v.floatV);     
+            val->dt = DT_FLOAT;
+            memcpy(&val->v.floatV, dataPtr, sizeof(float));
             break;
-
         case DT_BOOL:
-            sprintf(pos,"%i",value->v.boolV);
+            val->dt = DT_BOOL;
+            memcpy(&val->v.boolV, dataPtr, sizeof(bool));
             break;
-
-        case DT_STRING: 
-            sprintf(pos,"%s",value->v.stringV);
+        case DT_STRING: {
+            val->dt = DT_STRING;
+            int length = schema->typeLength[attrNum];
+            char *stringValue = (char *)malloc(length + 1);
+            strncpy(stringValue, dataPtr, length);
+            stringValue[length] = '\0';
+            val->v.stringV = stringValue;
             break;
         }
+    }
+
+    *value = val;
+    return RC_OK;
+}
+
+RC setAttr(Record *record, Schema *schema, int attrNum, Value *value) {
+    int offset = 0;
+
+    // Calculate the offset for the requested attribute
+    for (int i = 0; i < attrNum; i++) {
+        switch (schema->dataTypes[i]) {
+            case DT_INT:
+                offset += sizeof(int);
+                break;
+            case DT_FLOAT:
+                offset += sizeof(float);
+                break;
+            case DT_BOOL:
+                offset += sizeof(bool);
+                break;
+            case DT_STRING:
+                offset += schema->typeLength[i];
+                break;
+        }
+    }
+
+    // Set the attribute value based on its data type
+    char *dataPtr = record->data + offset;
+    switch (value->dt) {
+        case DT_INT:
+            memcpy(dataPtr, &value->v.intV, sizeof(int));
+            break;
+        case DT_FLOAT:
+            memcpy(dataPtr, &value->v.floatV, sizeof(float));
+            break;
+        case DT_BOOL:
+            memcpy(dataPtr, &value->v.boolV, sizeof(bool));
+            break;
+        case DT_STRING: {
+            int length = schema->typeLength[attrNum];
+            strncpy(dataPtr, value->v.stringV, length);
+            break;
+        }
+    }
 
     return RC_OK;
 }
