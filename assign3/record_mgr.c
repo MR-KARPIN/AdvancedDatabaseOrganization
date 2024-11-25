@@ -709,6 +709,7 @@ RC getAttr(Record *record, Schema *schema, int attrNum, Value **value) {
                 offset += schema->typeLength[i];
                 break;
     }
+    }
 
     // Get the attribute value based on its data type
     char *dataPtr = record->data + offset;
