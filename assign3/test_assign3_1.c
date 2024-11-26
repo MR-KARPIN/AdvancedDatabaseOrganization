@@ -157,18 +157,19 @@ testCreateTableAndInsert (void)
 
 	// insert rows into table
 	for(i = 0; i < numInserts; i++)
-	{
+    {
 		r = fromTestRecord(schema, inserts[i]);
 		TEST_CHECK(insertRecord(table,r));
 		rids[i] = r->id;
-	}
+        freeRecord(r);    // added Fall 2021
+    }
 
 	TEST_CHECK(closeTable(table));
 	TEST_CHECK(openTable(table, "test_table_r"));
 
 	// randomly retrieve records from the table and compare to inserted ones
 	for(i = 0; i < 1000; i++)
-	{
+	{   TEST_CHECK(createRecord(&r, schema));  // added Fall 2021
 		int pos = rand() % numInserts;
 		RID rid = rids[pos];
 		TEST_CHECK(getRecord(table, rid, r));
@@ -327,6 +328,7 @@ testUpdateTable (void)
 	}
 
 	// delete rows from table
+    TEST_CHECK(createRecord(&r, schema)); // added Fall 2021
 	for(i = 0; i < numDeletes; i++)
 	{
 		TEST_CHECK(deleteRecord(table,rids[deletes[i]]));
