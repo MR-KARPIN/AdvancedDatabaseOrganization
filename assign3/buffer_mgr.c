@@ -8,131 +8,101 @@
 
 typedef struct Page
 {
-	SM_PageHandle data; // Actual data of the page
-	PageNumber pageNum; // An identification integer given to each page
-	int dirtyFlag; // Used to indicate whether the contents of the page has been modified by the client
-	int fixCount; // Used to indicate the number of clients using that page at a given instance
-    int hitNum; // Used by LRU algorithm to get the least recently used page
+	SM_PageHandle data; // Data of page
+	PageNumber pageNum; // ID for Page
+	int dirtyFlag; // Modified?
+	int fixCount; // Clients using page
+    int hitNum; // For LRU Algorithm
 } PageFrame;
 
-int bufferSize = 0;
 int numReadIO = 0;
 int numWriteIO = 0;
 int hit;
 
-void pinPageFIFO(BM_BufferPool *const bm, PageFrame *page)
-{
-    //printf("FIFO Started");
-	PageFrame *pageFrame = (PageFrame *) bm->mgmtData;
-	
-	int next = numReadIO % bufferSize;
+void pinPageFIFO(BM_BufferPool *const bm, PageFrame *page) {
+    // Get the start of the buffer pool's page frame array
+    PageFrame *pageFrame = (PageFrame *) bm->mgmtData;
 
-	// Interating through all the page frames in the buffer pool
-	for(int i = 0; i < bufferSize; i++)
-	{
-		if(pageFrame[next].fixCount == 0)
-		{
-			// If page in memory has been modified (dirtyBit = 1), then write page to disk
-			if(pageFrame[next].dirtyFlag == 1)
-			{
-				SM_FileHandle fh;
-				openPageFile(bm->pageFile, &fh);
-				writeBlock(pageFrame[next].pageNum, &fh, pageFrame[next].data);
-				
-				// Increase the writeCount which records the number of writes done by the buffer manager.
-				numWriteIO++;
-			}
-			
-			// Setting page frame's content to new page's content
-			pageFrame[next].data = page->data;
-			pageFrame[next].pageNum = page->pageNum;
-			pageFrame[next].dirtyFlag = page->dirtyFlag;
-			pageFrame[next].fixCount = page->fixCount;
-			break;
-		}
-		else
-		{
-			// If the current page frame is being used by some client, we move on to the next location
-			next++;
-			next = (next % bufferSize == 0) ? 0 : next;
-		}
-	}
+    // Calculate the initial index based on FIFO logic
+    int next = numReadIO % bm->numPages;
 
+    // Iterate through the buffer pool pages to find a replacable frame
+    for (int i = 0; i < bm->numPages; i++) {
+        // Check if the current page frame can be replaced
+        if (pageFrame[next].fixCount == 0) {
+            // If the page is dirty, write it back to disk
+            if (pageFrame[next].dirtyFlag == 1) {
+                SM_FileHandle fh;
+                if (openPageFile(bm->pageFile, &fh) == RC_OK) {
+                    writeBlock(pageFrame[next].pageNum, &fh, pageFrame[next].data);
+                    numWriteIO++;
+                }
+            }
+
+            // Replace the page frame with the new page data
+            pageFrame[next].data = page->data;
+            pageFrame[next].pageNum = page->pageNum;
+            pageFrame[next].dirtyFlag = page->dirtyFlag;
+            pageFrame[next].fixCount = page->fixCount;
+            return; // Exit the function once the page is pinned
+        }
+
+        // Move to the next frame using FIFO logic
+        next = (next + 1) % bm->numPages;
+    }
 }
 
 void pinPageLRU(BM_BufferPool *const bm, PageFrame *page) {
     PageFrame *pageFrame = (PageFrame *) bm->mgmtData;
-	int i, leastHitIndex, leastHitNum;
+    int leastHitIndex, leastHitNum;
 
-	// Interating through all the page frames in the buffer pool.
-	for(i = 0; i < bufferSize; i++)
-	{
-		// Finding page frame whose fixCount = 0 i.e. no client is using that page frame.
-		if(pageFrame[i].fixCount == 0)
-		{
-			leastHitIndex = i;
-			leastHitNum = pageFrame[i].hitNum;
-			break;
-		}
-	}	
+    // Find the least recently used (LRU) page that can be replaced
+    for (int i = 0; i < bm->numPages; i++) {
+        if (pageFrame[i].fixCount == 0 && pageFrame[i].hitNum < leastHitNum) {
+            leastHitIndex = i;
+            leastHitNum = pageFrame[i].hitNum;
+        }
+    }
 
-	// Finding the page frame having minimum hitNum (i.e. it is the least recently used) page frame
-	for(i = leastHitIndex + 1; i < bufferSize; i++)
-	{
-		if(pageFrame[i].hitNum < leastHitNum)
-		{
-			leastHitIndex = i;
-			leastHitNum = pageFrame[i].hitNum;
-		}
-	}
+    // Write back the page if it is dirty
+    if (pageFrame[leastHitIndex].dirtyFlag) {
+        SM_FileHandle fh;
+        if (openPageFile(bm->pageFile, &fh) == RC_OK) {
+            numWriteIO++;
+        }
+    }
 
-	// If page in memory has been modified (dirtyFlag == true), then write page to disk
-	if(pageFrame[leastHitIndex].dirtyFlag == true)
-	{
-		SM_FileHandle fh;
-		openPageFile(bm->pageFile, &fh);
-		writeBlock(pageFrame[leastHitIndex].pageNum, &fh, pageFrame[leastHitIndex].data);
-		
-		// Increase the writeCount which records the number of writes done by the buffer manager.
-		numWriteIO++;
-	}
-	
-	// Setting page frame's content to new page's content
-	pageFrame[leastHitIndex].data = page->data;
-	pageFrame[leastHitIndex].pageNum = page->pageNum;
-	pageFrame[leastHitIndex].dirtyFlag = page->dirtyFlag;
-	pageFrame[leastHitIndex].fixCount = page->fixCount;
-	pageFrame[leastHitIndex].hitNum = page->hitNum;
-
+    // Update the selected page frame with the new page data
+    pageFrame[leastHitIndex].data = page->data;
+    pageFrame[leastHitIndex].pageNum = page->pageNum;
+    pageFrame[leastHitIndex].dirtyFlag = page->dirtyFlag;
+    pageFrame[leastHitIndex].fixCount = page->fixCount;
+    pageFrame[leastHitIndex].hitNum = page->hitNum;
 }
 
 // Initialize the buffer pool
 RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const int numPages, ReplacementStrategy strategy, void *stratData) {
-   
-    // Allocate memory for the page file name and copy it
-    bm->pageFile = (char *) (char *)pageFileName;
-    
-    // Initialize the number of pages and the replacement strategy
-    bm->numPages = numPages;
-    bm->strategy = strategy;
+    // Allocate memory for the page frames
+    PageFrame *page = (PageFrame *)malloc(sizeof(PageFrame) * numPages);
 
-    PageFrame *page = malloc(sizeof(PageFrame) * numPages);
-
-    // Initialize management data for the buffer pool
-    bufferSize = numPages;
-
-    for (int i = 0; i < bufferSize; i++) {
-        page[i].pageNum = NO_PAGE; // Initialize all frames as empty
-        page[i].dirtyFlag = false; // Pages are clean initially
-        page[i].fixCount = 0; // No pages are pinned initially
-        page[i].hitNum = 0;
-        page[i].data = malloc(PAGE_SIZE);
+    // Initialize each page frame in the buffer pool
+    for (int i = 0; i < numPages; i++) {
+        page[i].pageNum = NO_PAGE;        // Mark the frame as unused
+        page[i].dirtyFlag = false;       // Initially, pages are clean
+        page[i].fixCount = 0;            // No pages are pinned initially
+        page[i].hitNum = 0;              // Reset usage count
+        page[i].data = malloc(PAGE_SIZE); // Allocate memory for page data
     }
 
+    // Initialize the buffer pool structure
+    bm->pageFile = strdup(pageFileName); // Duplicate the page file name
+    bm->numPages = numPages;
+    bm->strategy = strategy;
     bm->mgmtData = page;
 
-    // Initialize statistics for read/write IO
-    numReadIO = numWriteIO = 0;
+    // Reset read/write IO counters
+    numReadIO = 0;
+    numWriteIO = 0;
 
     return RC_OK;
 }
@@ -140,20 +110,15 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const
 // Shut down the buffer pool
 RC shutdownBufferPool(BM_BufferPool *const bm) {
 	PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
-	
-	forceFlushPool(bm); // Write all dirty pages back onto disk
 
-	int i;	
-	for(i = 0; i < bufferSize; i++)
-	{
-		// If fixCount != 0, it means that the contents of the page was modified by some client and has not been written back to disk.
+	forceFlushPool(bm); // Write all pages marked dirty back to disk
+
+	for(int i = 0; i < bm->numPages; i++) {
+		// If fixCount is not 0, then it hasn't been written back
 		if(pageFrame[i].fixCount != 0)
-		{
 			return RC_FILE_NOT_FOUND;
-		}
 	}
-
-	// Releasing space occupied by the page
+    // Free space allocated by page
 	free(pageFrame);
 	bm->mgmtData = NULL;
 	return RC_OK;
@@ -165,15 +130,12 @@ RC forceFlushPool(BM_BufferPool *const bm)
 	PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
 	
 	// Loop through buffer and flush dirty pages
-	for(int i = 0; i < bufferSize; i++)
-	{
-		if(pageFrame[i].fixCount == 0 && pageFrame[i].dirtyFlag)
-		{
+	for(int i = 0; i < bm->numPages; i++) {
+		if(pageFrame[i].fixCount == 0 && pageFrame[i].dirtyFlag) {
 			SM_FileHandle fh;
 			openPageFile(bm->pageFile, &fh);
 			writeBlock(pageFrame[i].pageNum, &fh, pageFrame[i].data);
-			// Mark the page as not dirty
-			pageFrame[i].dirtyFlag = false;
+			pageFrame[i].dirtyFlag = false; // Mark the page as not dirty
 			numWriteIO++;
 		}
 	}	
@@ -186,7 +148,7 @@ RC forceFlushPool(BM_BufferPool *const bm)
 RC markDirty(BM_BufferPool *const bm, BM_PageHandle *const page) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
     // First, let's loop through the buffer...
-    for (int i = 0; i < bufferSize; i++) {
+    for (int i = 0; i < bm->numPages; i++) {
         // and if we found the desired page
         if (pageFrame[i].pageNum == page->pageNum) {
             // Mark it as DIRTY
@@ -194,8 +156,6 @@ RC markDirty(BM_BufferPool *const bm, BM_PageHandle *const page) {
             return RC_OK;
         }
     }
-    // Error if page isn't found
-    return RC_READ_NON_EXISTING_PAGE;
 }
 
 // Unpin a page from the buffer pool
@@ -203,7 +163,7 @@ RC unpinPage(BM_BufferPool *const bm, BM_PageHandle *const page) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
 
     // Loop for the page we want to unpin
-    for (int i = 0; i < bufferSize; i++) {
+    for (int i = 0; i < bm->numPages; i++) {
         if (pageFrame[i].pageNum == page->pageNum) {
             // If pinned...
             if (pageFrame[i].fixCount > 0) {
@@ -223,7 +183,7 @@ RC forcePage(BM_BufferPool *const bm, BM_PageHandle *const page) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
 
     // Loop again for the page we are looking for...
-    for (int i = 0; i < bufferSize; i++) {
+    for (int i = 0; i < bm->numPages; i++) {
         if (pageFrame[i].pageNum == page->pageNum) {
             SM_FileHandle fh;
 			openPageFile(bm->pageFile, &fh);
@@ -243,10 +203,8 @@ extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page,
 	    const PageNumber pageNum)
 {
 	PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
-	
 	// Buffer pool is empty and thus first page will be pinned
-	if(pageFrame[0].pageNum == -1)
-	{
+	if(pageFrame[0].pageNum == -1)  {
 		// Reading page from disk. Initializing page frame's content in the buffer pool
 		SM_FileHandle fh;
 		openPageFile(bm->pageFile, &fh);
@@ -262,27 +220,18 @@ extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page,
 		
 		return RC_OK;		
 	}
-	else
-	{	
-		int i;
-		bool isBufferFull = true;
-		
-		for(i = 0; i < bufferSize; i++)
-		{
-			if(pageFrame[i].pageNum != -1)
-			{	
-				// Checking if page is in memory
-				if(pageFrame[i].pageNum == pageNum)
-				{
-					// Increasing fixCount i.e. now there is one more client accessing this page
+	else {	
+		bool bufferFull;
+		for(int i = 0; i < bm->numPages; i++)   {
+			if(pageFrame[i].pageNum != -1)  {	
+				// Is page in memory?
+				if(pageFrame[i].pageNum == pageNum) {
+					// If so, increase fixCount
 					pageFrame[i].fixCount++;
-					isBufferFull = false;
-					hit++; // Incrementing hit - used by LRU algorithm to determine the least recently used page
-
+					bufferFull = false;
+					hit++; // Incrementing hit for LRU
 					if(bm->strategy == RS_LRU)
-						// LRU uses the value of hit to determine the least recently used page	
 						pageFrame[i].hitNum = hit;
-					
 					page->pageNum = pageNum;
 					page->data = pageFrame[i].data;
 					break;
@@ -295,30 +244,21 @@ extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page,
 				pageFrame[i].pageNum = pageNum;
 				pageFrame[i].fixCount = 1;
 				numReadIO++;	
-				hit++; // Incrementing hit (hit is used by LRU algorithm to determine the least recently used page)
-
+				hit++; // Incrementing hit for LRU
 				if(bm->strategy == RS_LRU)
-					// LRU algorithm uses the value of hit to determine the least recently used page
 					pageFrame[i].hitNum = hit;				
-				else if(bm->strategy == RS_CLOCK)
-					// hitNum = 1 to indicate that this was the last page frame examined (added to the buffer pool)
-					pageFrame[i].hitNum = 1;
-						
 				page->pageNum = pageNum;
 				page->data = pageFrame[i].data;
-				
-				isBufferFull = false;
+				bufferFull = false;
 				break;
 			}
 		}
 		
-		// If isBufferFull = true, then it means that the buffer is full and we must replace an existing page using page replacement strategy
-		if(isBufferFull == true)
-		{
-			// Create a new page to store data read from the file.
+		// If buffer is full then we must find a page to replace using the given strategy
+		if(bufferFull == true)  {
+			// Newly created page to store data
 			PageFrame *newPage = (PageFrame *) malloc(sizeof(PageFrame));		
-			
-			// Reading page from disk and initializing page frame's content in the buffer pool
+
 			SM_FileHandle fh;
 			openPageFile(bm->pageFile, &fh);
 			newPage->data = (SM_PageHandle) malloc(PAGE_SIZE);
@@ -329,19 +269,16 @@ extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page,
 			numReadIO++;
 			hit++;
 			if(bm->strategy == RS_LRU)
-				// LRU algorithm uses the value of hit to determine the least recently used page
 				newPage->hitNum = hit;				
 			page->pageNum = pageNum;
 			page->data = newPage->data;			
 
-			// Call appropriate algorithm's function depending on the page replacement strategy selected (passed through parameters)
-			switch(bm->strategy)
-			{			
-				case RS_FIFO: // Using FIFO algorithm
+			// Use the strategy function that was selected
+			switch(bm->strategy)  {			
+				case RS_FIFO:
 					pinPageFIFO(bm, newPage);
 					break;
-				
-				case RS_LRU: // Using LRU algorithm
+				case RS_LRU:
 					pinPageLRU(bm, newPage);
 					break;
 				default:
@@ -358,14 +295,14 @@ extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page,
 // Get the frame contents of the buffer pool
 PageNumber *getFrameContents(BM_BufferPool *const bm) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
-    if (bufferSize <= 0 || bufferSize > MAX_ALLOWED_PAGES) {
+    if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
         fprintf(stderr, "Error: Invalid number of pages (%d)\n", bm->numPages);
         return NULL;
     }
 
     PageNumber *frameContents = (PageNumber *) malloc(bm->numPages * sizeof(PageNumber));
 
-    for (int i = 0; i < bufferSize; i++) {
+    for (int i = 0; i < bm->numPages; i++) {
         frameContents[i] = pageFrame[i].pageNum;
     }
 
@@ -383,7 +320,7 @@ bool *getDirtyFlags(BM_BufferPool *const bm) {
     }
     bool *dirtyFlags = (bool *) malloc(bm->numPages * sizeof(bool));
 
-    for (int i = 0; i < bufferSize; i++){
+    for (int i = 0; i < bm->numPages; i++){
         if (pageFrame[i].dirtyFlag){
             dirtyFlags[i] = true; // Write true if the frame is dirty
         } else {
@@ -397,13 +334,13 @@ bool *getDirtyFlags(BM_BufferPool *const bm) {
 // Get fix counts for the buffer pool
 int *getFixCounts(BM_BufferPool *const bm) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
-    if (bufferSize <= 0 || bufferSize > MAX_ALLOWED_PAGES) {
+    if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
         fprintf(stderr, "Error: Invalid number of pages (%d)\n", bm->numPages);
         return NULL;
     }
     int *fixCounts = (int *) malloc(bm->numPages * sizeof(int));
 
-    for (int i = 0; i < bufferSize; i++)
+    for (int i = 0; i < bm->numPages; i++)
         fixCounts[i] = pageFrame[i].fixCount;
 
     return fixCounts;
