@@ -11,6 +11,12 @@ typedef struct BTreeHandle {
   void *mgmtData;
 } BTreeHandle;
 
+typedef struct BTreeManagementData {
+  int nodes;
+  int entries;
+  int n;
+} BTreeManagementData;
+
 typedef struct BT_ScanHandle {
   BTreeHandle *tree;
   void *mgmtData;
