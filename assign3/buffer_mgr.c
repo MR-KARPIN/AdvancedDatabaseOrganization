@@ -197,9 +197,7 @@ RC forcePage(BM_BufferPool *const bm, BM_PageHandle *const page) {
     return RC_OK;
 }
 
-
-// Pin a page into the buffer pool
-extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, 
+RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, 
 	    const PageNumber pageNum)
 {
 	PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
@@ -291,8 +289,6 @@ extern RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page,
 	}	
 }
 
-
-// Get the frame contents of the buffer pool
 PageNumber *getFrameContents(BM_BufferPool *const bm) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
     if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
@@ -309,8 +305,6 @@ PageNumber *getFrameContents(BM_BufferPool *const bm) {
     return frameContents;
 }
 
-
-// Get dirty flags for the buffer pool
 bool *getDirtyFlags(BM_BufferPool *const bm) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
     
@@ -330,8 +324,6 @@ bool *getDirtyFlags(BM_BufferPool *const bm) {
     return dirtyFlags;
 }
 
-
-// Get fix counts for the buffer pool
 int *getFixCounts(BM_BufferPool *const bm) {
     PageFrame *pageFrame = (PageFrame *)bm->mgmtData;
     if (bm->numPages <= 0 || bm->numPages > MAX_ALLOWED_PAGES) {
@@ -346,14 +338,10 @@ int *getFixCounts(BM_BufferPool *const bm) {
     return fixCounts;
 }
 
-
-// Get the number of read I/O operations
 int getNumReadIO(BM_BufferPool *const bm) {
     return (numReadIO + 1);
 }
 
-
-// Get the number of write I/O operations
 int getNumWriteIO(BM_BufferPool *const bm) {
     return numWriteIO;
 }
