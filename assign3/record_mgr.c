@@ -701,7 +701,7 @@ RC freeRecord(Record *record)
     return RC_OK;
 }
 
-RC attrOffset(Schema *schema, int attrNum, int *result)
+RC offsetVal(Schema *schema, int attrNum, int *result)
 {
     *result = 1; 
 
@@ -730,7 +730,7 @@ RC attrOffset(Schema *schema, int attrNum, int *result)
 RC getAttr (Record *record, Schema *schema, int attrNum, Value **value)
 {
 	int offset = 0;
-	attrOffset(schema, attrNum, &offset);
+	offsetVal(schema, attrNum, &offset);
 
 	Value *attribute = (Value*) malloc(sizeof(Value));
 
@@ -790,7 +790,7 @@ RC getAttr (Record *record, Schema *schema, int attrNum, Value **value)
 RC setAttr(Record *record, Schema *schema, int attrNum, Value *value)
 {
     int offset = 0;
-    attrOffset(schema, attrNum, &offset);
+    offsetVal(schema, attrNum, &offset);
 
     char *dataPointer = record->data + offset;
 
