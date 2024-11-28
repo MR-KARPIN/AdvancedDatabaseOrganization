@@ -313,7 +313,6 @@ RC closeTable(RM_TableData *rel) {
 
     // Access the existing buffer pool for the table
     BM_BufferPool *bufferPool = &record_mgr->bufferPool;
-    BufferPoolMgmtData *mgmtData = (BufferPoolMgmtData *) &bufferPool->mgmtData;
 
     forceFlushPool(bufferPool);
 
