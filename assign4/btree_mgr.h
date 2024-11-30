@@ -11,16 +11,31 @@ typedef struct BTreeHandle {
   void *mgmtData;
 } BTreeHandle;
 
+typedef struct Node {
+  Value* keys;
+  struct Node** children; // when non-leaf it contains children, otherwise is NULL
+  bool isLeaf;
+  RID* leafRIDList; // When its leaf, it is the list of the RIDs each key is pointing, otherwise is NULL
+  int numKeys;
+} Node;
+
 typedef struct BTreeManagementData {
   int nodes;
   int entries;
   int n;
+  Node *rootNode;
 } BTreeManagementData;
 
 typedef struct BT_ScanHandle {
   BTreeHandle *tree;
   void *mgmtData;
 } BT_ScanHandle;
+
+typedef struct BT_ScanHandleManagementData {
+  RID *list;
+  int current;
+  int total;
+} BT_ScanHandleManagementData;
 
 // init and shutdown index manager
 extern RC initIndexManager (void *mgmtData);
